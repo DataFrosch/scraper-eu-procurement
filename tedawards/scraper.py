@@ -179,9 +179,7 @@ def save_awards(session: Session, awards: List[TedAwardDataModel]) -> int:
             cb = ContractingBody(**award_data.contracting_body.model_dump())
             doc.contracting_bodies.append(cb)
 
-            contract_data = award_data.contract.model_dump()
-            contract_data.pop("performance_nuts_code", None)
-            contract = Contract(**contract_data)
+            contract = Contract(**award_data.contract.model_dump())
             contract.document = doc
             contract.contracting_body = cb
 

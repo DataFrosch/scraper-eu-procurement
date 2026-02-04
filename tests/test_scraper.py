@@ -79,10 +79,7 @@ def sample_award_data():
         ),
         contract=ContractModel(
             title="Test Contract",
-            reference_number="REF-2024-001",
             main_cpv_code="45000000",
-            total_value=100000.0,
-            total_value_currency="EUR",
         ),
         awards=[
             AwardModel(
@@ -96,7 +93,6 @@ def sample_award_data():
                         official_name="Test Contractor GmbH",
                         town="Munich",
                         country_code="DE",
-                        is_sme=True,
                     )
                 ],
             )
@@ -325,7 +321,6 @@ class TestSaveAwards:
                 select(Contract).where(Contract.ted_doc_id == "12345-2024")
             ).scalar_one()
             assert contract.title == "Test Contract"
-            assert contract.total_value == Decimal("100000.00")
 
             # Verify award was saved
             award = session.execute(
@@ -341,7 +336,6 @@ class TestSaveAwards:
                 )
             ).scalar_one()
             assert contractor.country_code == "DE"
-            assert contractor.is_sme is True
             assert contractor.award_id == award.id
 
         finally:

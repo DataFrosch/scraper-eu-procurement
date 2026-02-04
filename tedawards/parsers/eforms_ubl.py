@@ -170,8 +170,6 @@ def _extract_document_info(
         doc_id=doc_id,
         edition=f"{year}{day_of_year:03d}",
         version="eForms-UBL",
-        reception_id=None,
-        deletion_date=None,
         official_journal_ref=official_ref,
         publication_date=pub_date,
         dispatch_date=pub_date,
@@ -269,28 +267,6 @@ def _extract_contract_info(root: etree._Element) -> Optional[ContractModel]:
     title_elem = root.xpath(".//efac:SettledContract/cbc:Title", namespaces=NAMESPACES)
     title = first_text(title_elem) or ""
 
-    ref_elem = root.xpath(
-        ".//efac:SettledContract/efac:ContractReference/cbc:ID",
-        namespaces=NAMESPACES,
-    )
-    ref_number = first_text(ref_elem)
-
-    # Get total value
-    total_amount = root.xpath(
-        ".//efac:NoticeResult/cbc:TotalAmount", namespaces=NAMESPACES
-    )
-    total_value = None
-    total_currency = None
-    if total_amount and total_amount[0].text:
-        try:
-            total_value = float(total_amount[0].text)
-        except (ValueError, TypeError) as e:
-            logger.error(
-                f"Invalid total amount value: {total_amount[0].text}. Error: {e}"
-            )
-            raise
-        total_currency = total_amount[0].get("currencyID")
-
     cpv_elem = root.xpath(
         ".//cac:ProcurementProject/cac:MainCommodityClassification/cbc:ItemClassificationCode",
         namespaces=NAMESPACES,
@@ -301,22 +277,13 @@ def _extract_contract_info(root: etree._Element) -> Optional[ContractModel]:
     proc_elem = root.xpath(
         ".//cac:TenderingProcess/cbc:ProcedureCode", namespaces=NAMESPACES
     )
-    nuts_elem = root.xpath(
-        ".//cac:ProcurementProject/cac:RealizedLocation/cac:Address/cbc:CountrySubentityCode",
-        namespaces=NAMESPACES,
-    )
 
     return ContractModel(
         title=title,
-        reference_number=ref_number,
         short_description=title,
         main_cpv_code=first_text(cpv_elem),
         contract_nature_code=first_text(nature_elem),
-        total_value=total_value,
-        total_value_currency=total_currency,
         procedure_type_code=first_text(proc_elem),
-        award_criteria_code=None,
-        performance_nuts_code=first_text(nuts_elem),
     )
 
 
@@ -367,16 +334,8 @@ def _extract_awards(root: etree._Element) -> List[AwardModel]:
                 award_title=first_text(award_title_elem),
                 conclusion_date=conclusion_date_parsed,
                 contract_number=first_text(contract_num_elem),
-                tenders_received=None,
-                tenders_received_sme=None,
-                tenders_received_other_eu=None,
-                tenders_received_non_eu=None,
-                tenders_received_electronic=None,
                 awarded_value=awarded_value,
                 awarded_value_currency=awarded_currency,
-                subcontracted_value=None,
-                subcontracted_value_currency=None,
-                subcontracting_description=None,
                 contractors=contractors,
             )
         )
@@ -430,13 +389,6 @@ def _extract_contractors(root: etree._Element) -> List[ContractorModel]:
                         ".//cac:PostalAddress/cac:Country/cbc:IdentificationCode",
                         namespaces=NAMESPACES,
                     )
-                    phone_elem = company.xpath(
-                        ".//cac:Contact/cbc:Telephone", namespaces=NAMESPACES
-                    )
-                    email_elem = company.xpath(
-                        ".//cac:Contact/cbc:ElectronicMail", namespaces=NAMESPACES
-                    )
-                    url_elem = company.xpath(".//cbc:WebsiteURI", namespaces=NAMESPACES)
 
                     contractors.append(
                         ContractorModel(
@@ -445,12 +397,6 @@ def _extract_contractors(root: etree._Element) -> List[ContractorModel]:
                             town=first_text(town_elem),
                             postal_code=first_text(postal_elem),
                             country_code=first_text(country_elem),
-                            nuts_code=None,
-                            phone=first_text(phone_elem),
-                            email=first_text(email_elem),
-                            fax=None,
-                            url=first_text(url_elem),
-                            is_sme=False,
                         )
                     )
 

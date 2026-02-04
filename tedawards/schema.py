@@ -15,7 +15,6 @@ class DocumentModel(BaseModel):
     edition: Optional[str] = Field(None, description="Document edition")
     version: Optional[str] = Field(None, description="Document version")
     reception_id: Optional[str] = Field(None, description="Reception identifier")
-    deletion_date: Optional[date] = Field(None, description="Deletion date")
     official_journal_ref: Optional[str] = Field(
         None, description="Official Journal reference"
     )
@@ -47,21 +46,12 @@ class ContractModel(BaseModel):
     """Contract model."""
 
     title: str = Field(..., description="Contract title")
-    reference_number: Optional[str] = Field(None, description="Reference number")
     short_description: Optional[str] = Field(None, description="Short description")
     main_cpv_code: Optional[str] = Field(None, description="Main CPV code")
     contract_nature_code: Optional[str] = Field(
         None, description="Contract nature code"
     )
-    total_value: Optional[float] = Field(None, description="Total contract value")
-    total_value_currency: Optional[str] = Field(
-        None, description="Total value currency"
-    )
     procedure_type_code: Optional[str] = Field(None, description="Procedure type code")
-    award_criteria_code: Optional[str] = Field(None, description="Award criteria code")
-    performance_nuts_code: Optional[str] = Field(
-        None, description="Performance NUTS code"
-    )
 
 
 class ContractorModel(BaseModel):
@@ -73,11 +63,6 @@ class ContractorModel(BaseModel):
     postal_code: Optional[str] = Field(None, description="Postal code")
     country_code: Optional[str] = Field(None, description="Country code")
     nuts_code: Optional[str] = Field(None, description="NUTS code")
-    phone: Optional[str] = Field(None, description="Phone number")
-    email: Optional[str] = Field(None, description="Email address")
-    fax: Optional[str] = Field(None, description="Fax number")
-    url: Optional[str] = Field(None, description="URL")
-    is_sme: bool = Field(False, description="Is small/medium enterprise")
 
 
 class AwardModel(BaseModel):
@@ -89,30 +74,9 @@ class AwardModel(BaseModel):
     tenders_received: Optional[int] = Field(
         None, description="Number of tenders received"
     )
-    tenders_received_sme: Optional[int] = Field(
-        None, description="Tenders received from SMEs"
-    )
-    tenders_received_other_eu: Optional[int] = Field(
-        None, description="Tenders from other EU countries"
-    )
-    tenders_received_non_eu: Optional[int] = Field(
-        None, description="Tenders from non-EU countries"
-    )
-    tenders_received_electronic: Optional[int] = Field(
-        None, description="Electronic tenders received"
-    )
     awarded_value: Optional[float] = Field(None, description="Awarded value")
     awarded_value_currency: Optional[str] = Field(
         None, description="Awarded value currency"
-    )
-    subcontracted_value: Optional[float] = Field(
-        None, description="Subcontracted value"
-    )
-    subcontracted_value_currency: Optional[str] = Field(
-        None, description="Subcontracted value currency"
-    )
-    subcontracting_description: Optional[str] = Field(
-        None, description="Subcontracting description"
     )
     contractors: List[ContractorModel] = Field(
         default_factory=list, description="List of contractors"

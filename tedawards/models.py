@@ -38,7 +38,6 @@ class TEDDocument(Base):
     edition: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     version: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     reception_id: Mapped[Optional[str]] = mapped_column(String, nullable=True)
-    deletion_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
     official_journal_ref: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     publication_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
     dispatch_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
@@ -119,16 +118,10 @@ class Contract(Base):
         Integer, ForeignKey("contracting_bodies.id"), nullable=False
     )
     title: Mapped[str] = mapped_column(Text, nullable=False)
-    reference_number: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     short_description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     main_cpv_code: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     contract_nature_code: Mapped[Optional[str]] = mapped_column(String, nullable=True)
-    total_value: Mapped[Optional[Decimal]] = mapped_column(
-        Numeric(15, 2), nullable=True
-    )
-    total_value_currency: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     procedure_type_code: Mapped[Optional[str]] = mapped_column(String, nullable=True)
-    award_criteria_code: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=func.now())
 
     # Relationships
@@ -162,29 +155,10 @@ class Award(Base):
     award_title: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     conclusion_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
     tenders_received: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
-    tenders_received_sme: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
-    tenders_received_other_eu: Mapped[Optional[int]] = mapped_column(
-        Integer, nullable=True
-    )
-    tenders_received_non_eu: Mapped[Optional[int]] = mapped_column(
-        Integer, nullable=True
-    )
-    tenders_received_electronic: Mapped[Optional[int]] = mapped_column(
-        Integer, nullable=True
-    )
     awarded_value: Mapped[Optional[Decimal]] = mapped_column(
         Numeric(15, 2), nullable=True
     )
     awarded_value_currency: Mapped[Optional[str]] = mapped_column(String, nullable=True)
-    subcontracted_value: Mapped[Optional[Decimal]] = mapped_column(
-        Numeric(15, 2), nullable=True
-    )
-    subcontracted_value_currency: Mapped[Optional[str]] = mapped_column(
-        String, nullable=True
-    )
-    subcontracting_description: Mapped[Optional[str]] = mapped_column(
-        Text, nullable=True
-    )
     created_at: Mapped[datetime] = mapped_column(DateTime, default=func.now())
 
     # Relationships
@@ -214,11 +188,6 @@ class Contractor(Base):
     postal_code: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     country_code: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     nuts_code: Mapped[Optional[str]] = mapped_column(String, nullable=True)
-    phone: Mapped[Optional[str]] = mapped_column(String, nullable=True)
-    email: Mapped[Optional[str]] = mapped_column(String, nullable=True)
-    fax: Mapped[Optional[str]] = mapped_column(String, nullable=True)
-    url: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    is_sme: Mapped[bool] = mapped_column(Integer, nullable=False, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=func.now())
 
     # Relationships

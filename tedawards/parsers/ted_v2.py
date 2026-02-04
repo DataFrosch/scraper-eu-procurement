@@ -424,15 +424,10 @@ def _extract_contract_info_r207(root: etree._Element) -> Optional[ContractModel]
 
     return ContractModel(
         title=element_text(title_elem) or "",
-        reference_number=None,
         short_description=element_text(description_elem),
         main_cpv_code=elem_attr(cpv_main_elem, "CODE"),
         contract_nature_code=elem_attr(nature_elem, "CODE"),
-        total_value=None,
-        total_value_currency=None,
         procedure_type_code=elem_attr(procedure_elem, "CODE"),
-        award_criteria_code=None,
-        performance_nuts_code=None,
     )
 
 
@@ -455,7 +450,6 @@ def _extract_contract_info_r209(root: etree._Element) -> Optional[ContractModel]
 
     return ContractModel(
         title=element_text(title_elems[0]) if title_elems else "",
-        reference_number=None,
         short_description=(
             element_text(description_elems[0]) if description_elems else None
         ),
@@ -463,11 +457,6 @@ def _extract_contract_info_r209(root: etree._Element) -> Optional[ContractModel]
         contract_nature_code=(
             type_contract_elems[0].get("CTYPE") if type_contract_elems else None
         ),
-        total_value=None,
-        total_value_currency=None,
-        procedure_type_code=None,
-        award_criteria_code=None,
-        performance_nuts_code=None,
     )
 
 
@@ -525,13 +514,6 @@ def _extract_awards_r207(root: etree._Element) -> List[AwardModel]:
                     elem_text(offers_elem),
                     "tenders_received",
                 ),
-                tenders_received_sme=None,
-                tenders_received_other_eu=None,
-                tenders_received_non_eu=None,
-                tenders_received_electronic=None,
-                subcontracted_value=None,
-                subcontracted_value_currency=None,
-                subcontracting_description=None,
                 contractors=contractors,
             )
         )
@@ -586,13 +568,6 @@ def _extract_awards_r209(root: etree._Element) -> List[AwardModel]:
                     offers_elems[0].text if offers_elems else None,
                     "tenders_received",
                 ),
-                tenders_received_sme=None,
-                tenders_received_other_eu=None,
-                tenders_received_non_eu=None,
-                tenders_received_electronic=None,
-                subcontracted_value=None,
-                subcontracted_value_currency=None,
-                subcontracting_description=None,
                 contractors=contractors,
             )
         )
@@ -649,12 +624,6 @@ def _extract_contractors_r207(award_elem: etree._Element) -> List[ContractorMode
                 town=elem_text(town_elem),
                 postal_code=elem_text(postal_code_elem),
                 country_code=elem_attr(country_elem, "VALUE"),
-                nuts_code=None,
-                phone=None,
-                email=None,
-                fax=None,
-                url=None,
-                is_sme=False,
             )
         )
 
@@ -683,11 +652,6 @@ def _extract_contractors_r209(award_elem: etree._Element) -> List[ContractorMode
                 postal_code=first_text(postal_code_elems),
                 country_code=first_attr(country_elems, "VALUE"),
                 nuts_code=first_attr(nuts_elems, "CODE"),
-                phone=None,
-                email=None,
-                fax=None,
-                url=None,
-                is_sme=False,
             )
         )
 
@@ -740,6 +704,9 @@ def _extract_value_amount(
 
     R2.0.7/R2.0.8 uses VALUE_COST elements with FMTVAL attribute containing
     the numeric value (e.g., FMTVAL="19979964.32").
+
+    Valid FMTVAL values always contain a decimal point (e.g., "888000.00").
+    Corrupt values lack the decimal point and are wildly inflated.
     """
     if value_elem is None:
         return None
@@ -748,6 +715,15 @@ def _extract_value_amount(
     if fmtval is None:
         # No FMTVAL attribute means no numeric value available
         # (e.g., redacted defense contracts with text like "siehe Ziffer VI.2")
+        return None
+
+    if "." not in fmtval:
+        text_content = value_elem.text or ""
+        logger.warning(
+            "Corrupt FMTVAL (missing decimal point): FMTVAL=%r, text=%r",
+            fmtval,
+            text_content.strip(),
+        )
         return None
 
     return float(fmtval)
