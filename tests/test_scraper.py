@@ -84,7 +84,6 @@ def sample_award_data():
         awards=[
             AwardModel(
                 award_title="Award 1",
-                conclusion_date=date(2024, 1, 15),
                 awarded_value=50000.0,
                 awarded_value_currency="EUR",
                 tenders_received=5,

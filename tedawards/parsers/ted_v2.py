@@ -62,29 +62,6 @@ def _parse_date_yyyymmdd(text: Optional[str]) -> Optional[date]:
         return None
 
 
-def _parse_date_iso(text: Optional[str]) -> Optional[date]:
-    """
-    Parse date from ISO format YYYY-MM-DD (e.g., "2014-01-06").
-
-    Used for: DATE_CONCLUSION_CONTRACT (R2.0.9)
-    """
-    if not text:
-        return None
-
-    stripped = text.strip()
-    if not stripped:
-        return None
-
-    # Must be exactly YYYY-MM-DD
-    if not re.match(r"^\d{4}-\d{2}-\d{2}$", stripped):
-        return None
-
-    try:
-        return date.fromisoformat(stripped)
-    except ValueError:
-        return None
-
-
 def _parse_optional_int(text: Optional[str], field_name: str) -> Optional[int]:
     """Parse an optional integer field, returning None for invalid values.
 
@@ -311,7 +288,6 @@ def _extract_contracting_body_r207(
     email_elem = ca_elem.find(
         ".//{http://publications.europa.eu/TED_schema/Export}E_MAIL"
     )
-    fax_elem = ca_elem.find(".//{http://publications.europa.eu/TED_schema/Export}FAX")
 
     # Extract URL from various possible locations
     url_general_elem = root.find(
@@ -335,11 +311,9 @@ def _extract_contracting_body_r207(
         town=elem_text(town_elem),
         postal_code=elem_text(postal_code_elem),
         country_code=elem_attr(country_elem, "VALUE"),
-        nuts_code=None,
         contact_point=None,
         phone=elem_text(phone_elem),
         email=elem_text(email_elem),
-        fax=elem_text(fax_elem),
         url_general=elem_text(url_general_elem),
         url_buyer=elem_text(url_buyer_elem),
         authority_type_code=elem_attr(authority_type_elem, "CODE"),
@@ -367,7 +341,6 @@ def _extract_contracting_body_r209(
     contact_elems = ca_elem.xpath('.//*[local-name()="CONTACT_POINT"]')
     phone_elems = ca_elem.xpath('.//*[local-name()="PHONE"]')
     email_elems = ca_elem.xpath('.//*[local-name()="E_MAIL"]')
-    fax_elems = ca_elem.xpath('.//*[local-name()="FAX"]')
     url_general_elems = ca_elem.xpath('.//*[local-name()="URL_GENERAL"]')
     url_buyer_elems = ca_elem.xpath('.//*[local-name()="URL_BUYER"]')
     authority_type_elems = ca_elem.xpath('.//*[local-name()="CA_TYPE"]')
@@ -379,11 +352,9 @@ def _extract_contracting_body_r209(
         town=first_text(town_elems),
         postal_code=first_text(postal_code_elems),
         country_code=first_attr(country_elems, "VALUE"),
-        nuts_code=None,
         contact_point=first_text(contact_elems),
         phone=first_text(phone_elems),
         email=first_text(email_elems),
-        fax=first_text(fax_elems),
         url_general=first_text(url_general_elems),
         url_buyer=first_text(url_buyer_elems),
         authority_type_code=first_attr(authority_type_elems, "VALUE"),
@@ -483,9 +454,6 @@ def _extract_awards_r207(root: etree._Element) -> List[AwardModel]:
         title_elem = award_elem.find(
             ".//{http://publications.europa.eu/TED_schema/Export}CONTRACT_TITLE"
         )
-        award_date_elem = award_elem.find(
-            ".//{http://publications.europa.eu/TED_schema/Export}CONTRACT_AWARD_DATE"
-        )
 
         value_elem = award_elem.find(
             ".//{http://publications.europa.eu/TED_schema/Export}CONTRACT_VALUE_INFORMATION"
@@ -507,7 +475,6 @@ def _extract_awards_r207(root: etree._Element) -> List[AwardModel]:
             AwardModel(
                 contract_number=elem_text(contract_number_elem),
                 award_title=element_text(title_elem),
-                conclusion_date=_parse_award_date_r207(award_date_elem),
                 awarded_value=_extract_value_amount(value_elem, currency_elem),
                 awarded_value_currency=elem_attr(currency_elem, "CURRENCY"),
                 tenders_received=_parse_optional_int(
@@ -539,9 +506,6 @@ def _extract_awards_r209(root: etree._Element) -> List[AwardModel]:
 
         award_decision_elem = award_decision_elems[0]
 
-        award_date_elems = award_decision_elem.xpath(
-            './/*[local-name()="DATE_CONCLUSION_CONTRACT"]'
-        )
         value_elems = award_decision_elem.xpath('.//*[local-name()="VAL_TOTAL"]')
         offers_elems = award_decision_elem.xpath(
             './/*[local-name()="NB_TENDERS_RECEIVED"]'
@@ -553,11 +517,6 @@ def _extract_awards_r209(root: etree._Element) -> List[AwardModel]:
             AwardModel(
                 contract_number=first_text(contract_number_elems),
                 award_title=element_text(title_elems[0]) if title_elems else None,
-                conclusion_date=(
-                    _parse_date_conclusion_contract(award_date_elems[0].text)
-                    if award_date_elems and award_date_elems[0].text
-                    else None
-                ),
                 awarded_value=(
                     _extract_value_amount_r209(value_elems[0]) if value_elems else None
                 ),
@@ -642,7 +601,6 @@ def _extract_contractors_r209(award_elem: etree._Element) -> List[ContractorMode
         town_elems = contractor_elem.xpath('.//*[local-name()="TOWN"]')
         postal_code_elems = contractor_elem.xpath('.//*[local-name()="POSTAL_CODE"]')
         country_elems = contractor_elem.xpath('.//*[local-name()="COUNTRY"]')
-        nuts_elems = contractor_elem.xpath('.//*[local-name()="NUTS"]')
 
         contractors.append(
             ContractorModel(
@@ -651,50 +609,10 @@ def _extract_contractors_r209(award_elem: etree._Element) -> List[ContractorMode
                 town=first_text(town_elems),
                 postal_code=first_text(postal_code_elems),
                 country_code=first_attr(country_elems, "VALUE"),
-                nuts_code=first_attr(nuts_elems, "CODE"),
             )
         )
 
     return contractors
-
-
-def _parse_award_date_r207(date_elem: Optional[etree._Element]) -> Optional[date]:
-    """
-    Parse CONTRACT_AWARD_DATE from R2.0.7/R2.0.8 format.
-
-    R2.0.7/R2.0.8 uses nested <DAY>/<MONTH>/<YEAR> XML elements:
-    <CONTRACT_AWARD_DATE><DAY>15</DAY><MONTH>12</MONTH><YEAR>2010</YEAR></CONTRACT_AWARD_DATE>
-    """
-    if date_elem is None:
-        return None
-
-    day_elem = date_elem.find(".//{http://publications.europa.eu/TED_schema/Export}DAY")
-    month_elem = date_elem.find(
-        ".//{http://publications.europa.eu/TED_schema/Export}MONTH"
-    )
-    year_elem = date_elem.find(
-        ".//{http://publications.europa.eu/TED_schema/Export}YEAR"
-    )
-
-    # All three elements are required
-    if day_elem is None or month_elem is None or year_elem is None:
-        return None
-
-    if day_elem.text is None or month_elem.text is None or year_elem.text is None:
-        return None
-
-    try:
-        day = int(day_elem.text)
-        month = int(month_elem.text)
-        year = int(year_elem.text)
-        return date(year, month, day)
-    except ValueError:
-        return None
-
-
-def _parse_date_conclusion_contract(date_text: str) -> Optional[date]:
-    """Parse DATE_CONCLUSION_CONTRACT from R2.0.9 ISO format (YYYY-MM-DD)."""
-    return _parse_date_iso(date_text)
 
 
 def _extract_value_amount(

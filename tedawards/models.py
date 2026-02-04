@@ -76,10 +76,8 @@ class ContractingBody(Base):
     town: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     postal_code: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     country_code: Mapped[Optional[str]] = mapped_column(String, nullable=True)
-    nuts_code: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     phone: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     email: Mapped[Optional[str]] = mapped_column(String, nullable=True)
-    fax: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     url_general: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     url_buyer: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     contact_point: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
@@ -153,7 +151,6 @@ class Award(Base):
     )
     contract_number: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     award_title: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    conclusion_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
     tenders_received: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     awarded_value: Mapped[Optional[Decimal]] = mapped_column(
         Numeric(15, 2), nullable=True
@@ -167,10 +164,7 @@ class Award(Base):
         "Contractor", back_populates="award", cascade="all, delete-orphan"
     )
 
-    __table_args__ = (
-        Index("idx_award_contract", "contract_id"),
-        Index("idx_awards_conclusion_date", "conclusion_date"),
-    )
+    __table_args__ = (Index("idx_award_contract", "contract_id"),)
 
 
 class Contractor(Base):
@@ -187,7 +181,6 @@ class Contractor(Base):
     town: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     postal_code: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     country_code: Mapped[Optional[str]] = mapped_column(String, nullable=True)
-    nuts_code: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=func.now())
 
     # Relationships

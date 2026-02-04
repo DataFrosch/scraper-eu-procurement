@@ -250,11 +250,9 @@ def _extract_contracting_body(root: etree._Element) -> Optional[ContractingBodyM
         town=first_text(town_elem),
         postal_code=first_text(postal_elem),
         country_code=first_text(country_elem),
-        nuts_code=None,
         contact_point=None,
         phone=first_text(phone_elem),
         email=first_text(email_elem),
-        fax=None,
         url_general=first_text(url_elem),
         url_buyer=None,
         authority_type_code=None,
@@ -294,14 +292,6 @@ def _extract_awards(root: etree._Element) -> List[AwardModel]:
     lot_results = root.xpath(".//efac:LotResult", namespaces=NAMESPACES)
 
     for lot_result in lot_results:
-        # Get conclusion date
-        conclusion_date_elem = root.xpath(
-            ".//efac:SettledContract/cbc:IssueDate", namespaces=NAMESPACES
-        )
-        conclusion_date_parsed = None
-        if conclusion_date_elem and conclusion_date_elem[0].text:
-            conclusion_date_parsed = _parse_date_eforms(conclusion_date_elem[0].text)
-
         # Get tender information
         tender_amount = root.xpath(
             ".//efac:LotTender/cac:LegalMonetaryTotal/cbc:PayableAmount",
@@ -332,7 +322,6 @@ def _extract_awards(root: etree._Element) -> List[AwardModel]:
         awards.append(
             AwardModel(
                 award_title=first_text(award_title_elem),
-                conclusion_date=conclusion_date_parsed,
                 contract_number=first_text(contract_num_elem),
                 awarded_value=awarded_value,
                 awarded_value_currency=awarded_currency,

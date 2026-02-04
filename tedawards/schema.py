@@ -31,11 +31,9 @@ class ContractingBodyModel(BaseModel):
     town: Optional[str] = Field(None, description="Town/city")
     postal_code: Optional[str] = Field(None, description="Postal code")
     country_code: Optional[str] = Field(None, description="Country code")
-    nuts_code: Optional[str] = Field(None, description="NUTS code")
     contact_point: Optional[str] = Field(None, description="Contact point")
     phone: Optional[str] = Field(None, description="Phone number")
     email: Optional[str] = Field(None, description="Email address")
-    fax: Optional[str] = Field(None, description="Fax number")
     url_general: Optional[str] = Field(None, description="General URL")
     url_buyer: Optional[str] = Field(None, description="Buyer profile URL")
     authority_type_code: Optional[str] = Field(None, description="Authority type code")
@@ -62,14 +60,12 @@ class ContractorModel(BaseModel):
     town: Optional[str] = Field(None, description="Town/city")
     postal_code: Optional[str] = Field(None, description="Postal code")
     country_code: Optional[str] = Field(None, description="Country code")
-    nuts_code: Optional[str] = Field(None, description="NUTS code")
 
 
 class AwardModel(BaseModel):
     """Award model."""
 
     award_title: Optional[str] = Field(None, description="Award title")
-    conclusion_date: Optional[date] = Field(None, description="Conclusion date")
     contract_number: Optional[str] = Field(None, description="Contract number")
     tenders_received: Optional[int] = Field(
         None, description="Number of tenders received"

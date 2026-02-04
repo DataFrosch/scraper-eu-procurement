@@ -326,10 +326,6 @@ class TestDataValidation:
         if award_data.document.dispatch_date:
             assert isinstance(award_data.document.dispatch_date, date)
 
-        for award in award_data.awards:
-            if award.conclusion_date:
-                assert isinstance(award.conclusion_date, date)
-
     def test_country_codes_are_uppercase(self):
         """Test that country codes are normalized to uppercase."""
         fixture_file = FIXTURES_DIR / "ted_v2_r2_0_9_2024.xml"
