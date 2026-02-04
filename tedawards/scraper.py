@@ -88,28 +88,27 @@ def get_last_downloaded_issue(year: int, data_dir: Path = DATA_DIR) -> Optional[
     return max(matching_dirs)
 
 
-def download_and_extract(package_number: int, data_dir: Path = DATA_DIR) -> Optional[List[Path]]:
-    """Download and extract daily package, return list of XML and ZIP files.
+def download_package(package_number: int, data_dir: Path = DATA_DIR) -> bool:
+    """Download and extract a single daily package.
 
     Args:
         package_number: TED package number (yyyynnnnn format)
         data_dir: Directory to store downloaded data
 
     Returns:
-        List of file paths from the package, or None if package doesn't exist (404)
+        True if downloaded successfully, False if package doesn't exist (404)
     """
     package_url = f"https://ted.europa.eu/packages/daily/{package_number:09d}"
     package_str = f"{package_number:09d}"
     archive_path = data_dir / f"{package_str}.tar.gz"
     extract_dir = data_dir / package_str
 
-    # Check if already downloaded and extracted
+    # Skip if already downloaded and extracted
     if extract_dir.exists():
-        existing_files = list(extract_dir.glob('**/*'))
-        existing_files = [f for f in existing_files if f.is_file()]
+        existing_files = [f for f in extract_dir.glob('**/*') if f.is_file()]
         if existing_files:
-            logger.debug(f"Using existing data for package {package_str}")
-            return existing_files
+            logger.debug(f"Already downloaded: {package_str}")
+            return True
 
     # Download package
     logger.debug(f"Downloading package {package_str} from {package_url}")
@@ -119,7 +118,7 @@ def download_and_extract(package_number: int, data_dir: Path = DATA_DIR) -> Opti
     except requests.HTTPError as e:
         if e.response.status_code == 404:
             logger.debug(f"Package not available (404): {package_str}")
-            return None
+            return False
         logger.error(f"Failed to download package {package_str}: {e}")
         raise
     except requests.RequestException as e:
@@ -141,10 +140,27 @@ def download_and_extract(package_number: int, data_dir: Path = DATA_DIR) -> Opti
     # Clean up archive file
     archive_path.unlink()
 
-    # Return all files - let parsers decide what they can handle
-    all_files = list(extract_dir.glob('**/*'))
-    all_files = [f for f in all_files if f.is_file()]
-    return all_files
+    return True
+
+
+def get_package_files(package_number: int, data_dir: Path = DATA_DIR) -> Optional[List[Path]]:
+    """Get list of files from an already-downloaded package.
+
+    Args:
+        package_number: TED package number (yyyynnnnn format)
+        data_dir: Directory where packages are stored
+
+    Returns:
+        List of file paths, or None if package not downloaded
+    """
+    package_str = f"{package_number:09d}"
+    extract_dir = data_dir / package_str
+
+    if not extract_dir.exists():
+        return None
+
+    files = [f for f in extract_dir.glob('**/*') if f.is_file()]
+    return files if files else None
 
 
 def process_file(file_path: Path) -> TedParserResultModel:
@@ -266,100 +282,136 @@ def save_awards(session: Session, awards: List[TedAwardDataModel]) -> int:
     return count
 
 
-def scrape_year(year: int, start_issue: Optional[int] = None, max_issue: int = 300, data_dir: Path = DATA_DIR, force_reimport: bool = False):
-    """Scrape TED awards for all available packages in a year.
+def download_year(year: int, start_issue: Optional[int] = None, max_issue: int = 300, data_dir: Path = DATA_DIR):
+    """Download TED packages for a year.
 
     Args:
-        year: The year to scrape
-        start_issue: Starting OJ issue number (default: auto-resume from last downloaded issue + 1, or 1 if none)
-        max_issue: Maximum issue number to try (default: 300, sufficient for most years)
+        year: The year to download
+        start_issue: Starting OJ issue number (default: resume from last downloaded + 1)
+        max_issue: Maximum issue number to try (default: 300)
         data_dir: Directory for storing downloaded packages
-        force_reimport: If True, reimport data from all already-downloaded archives (starting from issue 1)
     """
-    Base.metadata.create_all(engine)
-
-    # Auto-resume from last downloaded issue if start_issue not specified (unless force_reimport)
+    # Auto-resume from last downloaded issue if start_issue not specified
     if start_issue is None:
-        if force_reimport:
-            start_issue = 1
-            logger.info(f"Force reimport: processing all downloaded data from issue 1")
+        last_issue = get_last_downloaded_issue(year, data_dir)
+        if last_issue is not None:
+            start_issue = last_issue + 1
+            logger.info(f"Resuming from issue {start_issue} (last downloaded: {last_issue})")
         else:
-            last_issue = get_last_downloaded_issue(year, data_dir)
-            if last_issue is not None:
-                start_issue = last_issue + 1
-                logger.info(f"Resuming from issue {start_issue} (last downloaded: {last_issue})")
-            else:
-                start_issue = 1
-                logger.info(f"No existing data found for year {year}, starting from issue 1")
+            start_issue = 1
 
-    logger.info(f"Scraping TED awards for year {year} (starting from issue {start_issue}, stopping after 10 consecutive 404s)")
+    logger.info(f"Downloading TED packages for year {year} (issues {start_issue}-{max_issue}, stopping after 10 consecutive 404s)")
 
-    total_processed = 0
+    total_downloaded = 0
     consecutive_404s = 0
-    max_consecutive_404s = 10  # Stop after 10 consecutive 404s
+    max_consecutive_404s = 10
 
     for issue in range(start_issue, max_issue + 1):
         package_number = get_package_number(year, issue)
+        success = download_package(package_number, data_dir)
 
-        # Download and extract package
-        files = download_and_extract(package_number, data_dir)
-
-        if files is None:
-            # Package doesn't exist (404)
+        if not success:
             consecutive_404s += 1
             if consecutive_404s >= max_consecutive_404s:
                 logger.info(f"Stopping after {max_consecutive_404s} consecutive 404s at issue {issue}")
                 break
             continue
 
-        # Reset 404 counter on success
         consecutive_404s = 0
+        total_downloaded += 1
 
-        # Process all files and collect awards
-        english_files = [
-            f for f in files
-            if (
-                # TED META XML: en_*_meta_org.zip or EN_*_META_ORG.ZIP
-                f.name.lower().startswith('en_') and '_meta_org.' in f.name.lower()
-            ) or (
-                # TED INTERNAL_OJS: *.en files
-                f.suffix.lower() == '.en'
-            ) or (
-                # TED 2.0 and eForms: all languages in one file (*.xml)
-                f.suffix.lower() == '.xml'
-            )
-        ]
-
-        all_awards = []
-        for file_path in english_files:
-            parser_result = process_file(file_path)
-            if parser_result:
-                all_awards.extend(parser_result.awards)
-
-        # Save all awards in a single transaction
-        if all_awards:
-            with get_session() as session:
-                saved = save_awards(session, all_awards)
-                total_processed += saved
-                logger.info(f"Package {package_number:09d}: Processed {saved} award notices")
-
-    logger.info(f"Year {year} completed: Processed {total_processed} total award notices")
+    logger.info(f"Year {year}: Downloaded {total_downloaded} packages")
 
 
-def scrape_year_range(start_year: int, end_year: int, data_dir: Path = DATA_DIR, force_reimport: bool = False):
-    """Scrape TED awards for a range of years.
+def get_downloaded_packages(year: int, data_dir: Path = DATA_DIR) -> List[int]:
+    """Get list of downloaded package numbers for a year.
 
     Args:
-        start_year: First year to scrape
-        end_year: Last year to scrape (inclusive)
-        data_dir: Directory for storing downloaded packages
-        force_reimport: If True, reprocess already-downloaded archives
+        year: Year to check
+        data_dir: Directory where packages are stored
+
+    Returns:
+        Sorted list of package numbers that have been downloaded
+    """
+    year_prefix = str(year)
+    packages = []
+
+    for item in data_dir.iterdir():
+        if item.is_dir() and item.name.startswith(year_prefix) and len(item.name) == 9:
+            try:
+                package_num = int(item.name)
+                pkg_year = package_num // 100000
+                if pkg_year == year:
+                    packages.append(package_num)
+            except ValueError:
+                continue
+
+    return sorted(packages)
+
+
+def import_package(package_number: int, data_dir: Path = DATA_DIR) -> int:
+    """Import awards from a single downloaded package.
+
+    Args:
+        package_number: TED package number (yyyynnnnn format)
+        data_dir: Directory where packages are stored
+
+    Returns:
+        Number of award notices imported
+    """
+    files = get_package_files(package_number, data_dir)
+    if files is None:
+        logger.warning(f"Package {package_number:09d} not found in {data_dir}")
+        return 0
+
+    # Filter to processable files
+    processable_files = [
+        f for f in files
+        if (
+            # TED META XML: en_*_meta_org.zip or EN_*_META_ORG.ZIP
+            f.name.lower().startswith('en_') and '_meta_org.' in f.name.lower()
+        ) or (
+            # TED INTERNAL_OJS: *.en files
+            f.suffix.lower() == '.en'
+        ) or (
+            # TED 2.0 and eForms: all languages in one file (*.xml)
+            f.suffix.lower() == '.xml'
+        )
+    ]
+
+    all_awards = []
+    for file_path in processable_files:
+        parser_result = process_file(file_path)
+        if parser_result:
+            all_awards.extend(parser_result.awards)
+
+    if not all_awards:
+        return 0
+
+    with get_session() as session:
+        saved = save_awards(session, all_awards)
+        logger.info(f"Package {package_number:09d}: Imported {saved} award notices")
+        return saved
+
+
+def import_year(year: int, data_dir: Path = DATA_DIR):
+    """Import awards from all downloaded packages for a year.
+
+    Args:
+        year: The year to import
+        data_dir: Directory where packages are stored
     """
     Base.metadata.create_all(engine)
 
-    logger.info(f"Scraping TED awards from {start_year} to {end_year}")
+    packages = get_downloaded_packages(year, data_dir)
+    if not packages:
+        logger.warning(f"No downloaded packages found for year {year}")
+        return
 
-    for year in range(start_year, end_year + 1):
-        scrape_year(year, data_dir=data_dir, force_reimport=force_reimport)
+    logger.info(f"Importing {len(packages)} packages for year {year}")
 
-    logger.info("Scraping completed")
+    total_imported = 0
+    for package_number in packages:
+        total_imported += import_package(package_number, data_dir)
+
+    logger.info(f"Year {year}: Imported {total_imported} total award notices")

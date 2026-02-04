@@ -147,15 +147,20 @@ The `ParserFactory` automatically detects and selects the appropriate parser:
 ## Development Commands
 
 ```bash
-# Scrape a full year (tries all issues 1-300, stops after 10 consecutive 404s)
-uv run tedawards scrape --year 2024
+# Download packages for a year (resumes from last downloaded)
+uv run tedawards download --year 2024
 
-# Scrape specific issue range within a year
-uv run tedawards scrape --year 2008 --start-issue 1 --max-issue 50
+# Download specific issue range
+uv run tedawards download --year 2008 --start-issue 1 --max-issue 50
 
-# Backfill multiple years
-uv run tedawards backfill --start-year 2008 --end-year 2024
+# Download multiple years
+uv run tedawards download --start-year 2008 --end-year 2024
 
+# Import downloaded packages for a year
+uv run tedawards import --year 2024
+
+# Import multiple years
+uv run tedawards import --start-year 2008 --end-year 2024
 ```
 
 ## Code Organization

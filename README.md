@@ -24,22 +24,28 @@ A Python scraper for EU procurement contract award notices from [TED Europa](htt
    uv sync
    ```
 
-2. **Scrape data**:
+2. **Download data**:
    ```bash
-   # Scrape a full year (automatically finds all available packages)
-   uv run tedawards scrape --year 2024
+   # Download packages for a year (resumes from last downloaded)
+   uv run tedawards download --year 2024
 
-   # Scrape specific issue range within a year
-   uv run tedawards scrape --year 2008 --start-issue 1 --max-issue 50
+   # Download specific issue range
+   uv run tedawards download --year 2008 --start-issue 1 --max-issue 50
 
-   # Backfill multiple years
-   uv run tedawards backfill --start-year 2008 --end-year 2024
-
-   # Scrape a specific package by number
-   uv run tedawards package --package 200800001
+   # Download multiple years
+   uv run tedawards download --start-year 2008 --end-year 2024
    ```
 
-3. **Query data**:
+3. **Import to database**:
+   ```bash
+   # Import downloaded packages for a year
+   uv run tedawards import --year 2024
+
+   # Import multiple years
+   uv run tedawards import --start-year 2008 --end-year 2024
+   ```
+
+4. **Query data**:
    ```bash
    # SQLite database is created at ./tedawards.db by default
    sqlite3 tedawards.db
@@ -73,7 +79,7 @@ Key tables:
   - `EFormsUBLParser` - eForms UBL ContractAwardNotice (2025+)
 - **Database**: SQLite with comprehensive procurement schema (PostgreSQL also supported)
 - **Scraper**: Downloads and processes TED packages by Official Journal issue number (sequential, not calendar-based)
-- **CLI**: Year-based commands for scraping and backfilling
+- **CLI**: Separate commands for downloading and importing data
 
 ## Package Numbering
 
