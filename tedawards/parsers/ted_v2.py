@@ -25,8 +25,8 @@ from .xml import (
     elem_attr,
     parse_iso_date,
     element_text,
-    parse_monetary_value,
 )
+from .monetary import parse_float_dot_decimal
 
 logger = logging.getLogger(__name__)
 
@@ -696,18 +696,22 @@ def _extract_value_amount(
     if value_elem is None:
         return None
 
-    try:
-        # Try FMTVAL attribute first (numeric format)
-        fmtval = value_elem.get("FMTVAL")
-        if fmtval:
+    # Try FMTVAL attribute first (numeric format)
+    fmtval = value_elem.get("FMTVAL")
+    if fmtval:
+        try:
             return float(fmtval)
+        except (ValueError, TypeError):
+            logger.warning(
+                "Invalid monetary value for %s: %r (FMTVAL attribute not numeric)",
+                "awarded_value",
+                fmtval,
+            )
+            return None
 
-        # Fall back to text content
-        if value_elem.text:
-            return parse_monetary_value(value_elem.text)
-
-    except (ValueError, TypeError) as e:
-        logger.debug(f"Error parsing value amount: {e}")
+    # Fall back to text content
+    if value_elem.text:
+        return parse_float_dot_decimal(value_elem.text, "awarded_value")
 
     return None
 
@@ -717,10 +721,15 @@ def _extract_value_amount_r209(value_elem: Optional[etree._Element]) -> Optional
     if value_elem is None:
         return None
 
-    try:
-        if value_elem.text:
-            return float(value_elem.text.replace(" ", "").replace(",", ""))
-    except (ValueError, TypeError) as e:
-        logger.debug(f"Error parsing R2.0.9 value amount: {e}")
+    if value_elem.text:
+        cleaned = value_elem.text.replace(" ", "").replace(",", "")
+        try:
+            return float(cleaned)
+        except (ValueError, TypeError):
+            logger.warning(
+                "Invalid monetary value for %s: %r (expected numeric value)",
+                "awarded_value",
+                value_elem.text,
+            )
 
     return None

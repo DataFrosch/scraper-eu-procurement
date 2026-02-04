@@ -297,10 +297,16 @@ def _parse_xml_contract_value(doc_elem: etree._Element) -> Optional[float]:
         for pattern in value_patterns:
             match = re.search(pattern, contents_text, re.IGNORECASE)
             if match:
+                raw_value = match.group(0)
                 value_str = match.group(1).replace(",", "").replace(" ", "")
                 try:
                     return float(value_str)
                 except ValueError:
+                    logger.warning(
+                        "Invalid monetary value for %s: %r (extracted from free text, could not parse)",
+                        "contract_value",
+                        raw_value,
+                    )
                     continue
 
     return None

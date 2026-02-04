@@ -30,6 +30,13 @@ TED Awards scraper for analyzing EU procurement contract awards from **2008 onwa
    - **Prefer standard library**: Use built-in methods over custom implementations (e.g., Python's date parsing, lxml's text extraction)
    - **Explicit errors**: When parsing fails, error messages must show the actual data value that failed, not just generic messages
    - **Data quality first**: Code should reveal data quality issues, not paper over them with fallbacks
+9. **Single-format parser functions**: Each value parser function handles exactly ONE specific format:
+   - **One function per format**: e.g., `parse_int_plain()`, `parse_monetary_dot_decimal()`, `parse_monetary_comma_decimal()`
+   - **Returns `Optional[T]`**: Returns parsed value if format matches exactly, `None` otherwise
+   - **Warnings on mismatch**: Log the field name and actual value that didn't match: `logger.warning("Invalid value for %s: %r (reason)", field_name, value)`
+   - **No fallbacks between formats**: Caller decides which parser to use, not the parser itself
+   - **Enables parallel development**: Different agents can independently build parser functions for specific formats
+   - **Format discovery**: Running imports with warnings reveals all formats that exist in the data, enabling iterative addition of new parser functions
 
 ## Data Source Details
 

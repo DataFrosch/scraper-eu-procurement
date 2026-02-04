@@ -17,7 +17,8 @@ from ..schema import (
     AwardModel,
     ContractorModel,
 )
-from .xml import xpath_text, parse_date_yyyymmdd, parse_monetary_value
+from .xml import xpath_text, parse_date_yyyymmdd
+from .monetary import parse_float_dot_decimal
 
 logger = logging.getLogger(__name__)
 
@@ -236,7 +237,7 @@ def _extract_contract_info(root: etree._Element) -> Optional[ContractModel]:
     total_currency = None
     value_elem = root.xpath(".//TOTAL_FINAL_VALUE//VALUE_COST/text()")
     if value_elem:
-        total_value = parse_monetary_value(value_elem[0])
+        total_value = parse_float_dot_decimal(value_elem[0], "total_value")
         currency_elem = root.xpath(
             ".//TOTAL_FINAL_VALUE//COSTS_RANGE_AND_CURRENCY_WITH_VAT_RATE/@CURRENCY"
         )
@@ -277,7 +278,7 @@ def _extract_awards(root: etree._Element) -> List[AwardModel]:
             ".//CONTRACT_VALUE_INFORMATION//VALUE_COST/text()"
         )
         if value_elem:
-            awarded_value = parse_monetary_value(value_elem[0])
+            awarded_value = parse_float_dot_decimal(value_elem[0], "awarded_value")
             currency_elem = award_elem.xpath(
                 ".//CONTRACT_VALUE_INFORMATION//COSTS_RANGE_AND_CURRENCY_WITH_VAT_RATE/@CURRENCY"
             )
