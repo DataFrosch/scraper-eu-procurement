@@ -23,9 +23,9 @@ from .xml import (
     first_attr,
     elem_text,
     elem_attr,
-    parse_iso_date,
     element_text,
 )
+from .date import parse_date_yyyymmdd
 from .monetary import parse_float_dot_decimal
 
 logger = logging.getLogger(__name__)
@@ -173,33 +173,24 @@ def _extract_document_info(
         logger.debug(f"No edition found in {xml_file.name}")
         return None
 
-    # Extract publication date
+    # Extract publication date (required)
     pub_date_elems = root.xpath('.//*[local-name()="DATE_PUB"]')
-    if not pub_date_elems:
+    if not pub_date_elems or not pub_date_elems[0].text:
         logger.debug(f"No publication date found in {xml_file.name}")
         return None
 
-    try:
-        pub_date = parse_iso_date(pub_date_elems[0].text)
-    except (ValueError, AttributeError) as e:
-        logger.error(
-            f"Invalid publication date in {xml_file.name}: "
-            f"'{pub_date_elems[0].text}'. Error: {e}"
-        )
-        raise
+    pub_date = parse_date_yyyymmdd(pub_date_elems[0].text, "publication_date")
+    if pub_date is None:
+        logger.debug(f"Could not parse publication date in {xml_file.name}")
+        return None
 
-    # Extract dispatch date
+    # Extract dispatch date (optional)
     dispatch_date_elems = root.xpath('.//*[local-name()="DS_DATE_DISPATCH"]')
     dispatch_date = None
     if dispatch_date_elems and dispatch_date_elems[0].text:
-        try:
-            dispatch_date = parse_iso_date(dispatch_date_elems[0].text)
-        except (ValueError, AttributeError) as e:
-            logger.error(
-                f"Invalid dispatch date in {xml_file.name}: "
-                f"'{dispatch_date_elems[0].text}'. Error: {e}"
-            )
-            raise
+        dispatch_date = parse_date_yyyymmdd(
+            dispatch_date_elems[0].text, "dispatch_date"
+        )
 
     # Extract other document metadata
     reception_id_elems = root.xpath('.//*[local-name()="RECEPTION_ID"]')
@@ -528,7 +519,7 @@ def _extract_awards_r209(root: etree._Element) -> List[AwardModel]:
                 contract_number=first_text(contract_number_elems),
                 award_title=element_text(title_elems[0]) if title_elems else None,
                 conclusion_date=(
-                    _parse_date_text(award_date_elems[0].text)
+                    _parse_date_text(award_date_elems[0].text, "conclusion_date")
                     if award_date_elems and award_date_elems[0].text
                     else None
                 ),
@@ -675,18 +666,14 @@ def _parse_award_date(date_elem: Optional[etree._Element]) -> Optional[date]:
 
     # Fall back to direct text if available
     if hasattr(date_elem, "text") and date_elem.text:
-        return _parse_date_text(date_elem.text)
+        return _parse_date_text(date_elem.text, "conclusion_date")
 
     return None
 
 
-def _parse_date_text(date_text: str) -> date:
+def _parse_date_text(date_text: str, field_name: str) -> Optional[date]:
     """Parse date from text string."""
-    try:
-        return parse_iso_date(date_text)
-    except (ValueError, AttributeError) as e:
-        logger.error(f"Invalid date: '{date_text}'. Error: {e}")
-        raise
+    return parse_date_yyyymmdd(date_text, field_name)
 
 
 def _extract_value_amount(

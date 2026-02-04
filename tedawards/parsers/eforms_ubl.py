@@ -17,7 +17,8 @@ from ..schema import (
     AwardModel,
     ContractorModel,
 )
-from .xml import first_text, parse_iso_date
+from .xml import first_text
+from .date import parse_date_iso_offset
 
 logger = logging.getLogger(__name__)
 
@@ -117,14 +118,10 @@ def _extract_document_info(
         logger.error(f"No publication date found in eForms document {xml_file}")
         return None
 
-    try:
-        pub_date = parse_iso_date(pub_date_elem[0].text)
-    except (ValueError, AttributeError, IndexError) as e:
-        logger.error(
-            f"Invalid publication date format in {xml_file}: "
-            f"{pub_date_elem[0].text}. Expected ISO date format. Error: {e}"
-        )
-        raise
+    pub_date = parse_date_iso_offset(pub_date_elem[0].text, "publication_date")
+    if pub_date is None:
+        logger.debug(f"Could not parse publication date in {xml_file}")
+        return None
 
     # Extract sender country
     countries = root.xpath(
@@ -304,13 +301,9 @@ def _extract_awards(root: etree._Element) -> List[AwardModel]:
         )
         conclusion_date_parsed = None
         if conclusion_date_elem and conclusion_date_elem[0].text:
-            try:
-                conclusion_date_parsed = parse_iso_date(conclusion_date_elem[0].text)
-            except (ValueError, AttributeError, IndexError) as e:
-                logger.error(
-                    f"Invalid conclusion date format: {conclusion_date_elem[0].text}. Error: {e}"
-                )
-                raise
+            conclusion_date_parsed = parse_date_iso_offset(
+                conclusion_date_elem[0].text, "conclusion_date"
+            )
 
         # Get tender information
         tender_amount = root.xpath(

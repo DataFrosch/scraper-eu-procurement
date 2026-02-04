@@ -17,7 +17,8 @@ from ..schema import (
     AwardModel,
     ContractorModel,
 )
-from .xml import xpath_text, parse_date_yyyymmdd
+from .xml import xpath_text
+from .date import parse_date_yyyymmdd
 from .monetary import parse_float_dot_decimal
 
 logger = logging.getLogger(__name__)
@@ -130,27 +131,18 @@ def _extract_document_info(
 
     # Parse dates
     publication_date = None
-    if date_pub and len(date_pub) == 8:
-        try:
-            publication_date = parse_date_yyyymmdd(date_pub)
-        except ValueError:
-            logger.warning(f"Invalid publication date format: {date_pub}")
+    if date_pub:
+        publication_date = parse_date_yyyymmdd(date_pub, "publication_date")
 
     dispatch_date = None
-    if date_disp and len(date_disp) == 8:
-        try:
-            dispatch_date = parse_date_yyyymmdd(date_disp)
-        except ValueError:
-            logger.warning(f"Invalid dispatch date format: {date_disp}")
+    if date_disp:
+        dispatch_date = parse_date_yyyymmdd(date_disp, "dispatch_date")
 
     # Extract deletion date from TECHNICAL_INFO
     deletion_date = None
     deletion_date_str = xpath_text(root, ".//TECHNICAL_INFO/DELETION_DATE")
-    if deletion_date_str and len(deletion_date_str) == 8:
-        try:
-            deletion_date = parse_date_yyyymmdd(deletion_date_str)
-        except ValueError:
-            pass
+    if deletion_date_str:
+        deletion_date = parse_date_yyyymmdd(deletion_date_str, "deletion_date")
 
     # Build document ID from NO_DOC_OJS
     doc_id = f"ojs-{no_doc_ojs}" if no_doc_ojs else f"ojs-{xml_file.stem}"

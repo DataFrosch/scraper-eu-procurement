@@ -11,7 +11,8 @@ from typing import List, Optional
 
 from lxml import etree
 
-from .xml import xpath_text, parse_date_yyyymmdd
+from .xml import xpath_text
+from .date import parse_date_yyyymmdd
 from ..schema import (
     TedAwardDataModel,
     DocumentModel,
@@ -162,19 +163,13 @@ def _convert_meta_xml_to_standard_format(
     refojs_list = doc_elem.xpath(".//refojs")
     if refojs_list:
         datepub = xpath_text(refojs_list[0], "./datepub") or ""
-        if datepub and len(datepub) == 8:
-            try:
-                pub_date = parse_date_yyyymmdd(datepub)
-            except ValueError:
-                logger.warning(f"Invalid publication date format: {datepub}")
+        if datepub:
+            pub_date = parse_date_yyyymmdd(datepub, "publication_date")
 
     # Parse dispatch date
     dispatch_date_obj = None
-    if datedisp and len(datedisp) == 8:
-        try:
-            dispatch_date_obj = parse_date_yyyymmdd(datedisp)
-        except ValueError:
-            pass
+    if datedisp:
+        dispatch_date_obj = parse_date_yyyymmdd(datedisp, "dispatch_date")
 
     # Build universal document identifier
     full_doc_id = f"meta-{nodocojs}-{datepub}" if datepub else f"meta-{nodocojs}"

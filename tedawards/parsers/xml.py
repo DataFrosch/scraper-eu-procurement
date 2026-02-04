@@ -2,36 +2,9 @@
 XML extraction helpers for TED parsers.
 """
 
-from datetime import date
 from typing import List, Optional
 
 from lxml import etree
-
-
-def parse_date_yyyymmdd(text: str) -> date:
-    """
-    Parse date from YYYYMMDD format (e.g., "20081231").
-
-    Raises ValueError if format is invalid.
-    """
-    if len(text) != 8:
-        raise ValueError(f"Expected 8-digit date, got: {text}")
-    year = int(text[0:4])
-    month = int(text[4:6])
-    day = int(text[6:8])
-    return date(year, month, day)
-
-
-def parse_iso_date(text: str) -> date:
-    """
-    Parse ISO date, stripping timezone suffix if present.
-
-    Handles: "2024-01-15", "2024-01-15Z", "2024-01-15+01:00", "2024-01-15T10:30:00Z"
-    Raises ValueError if format is invalid.
-    """
-    # Strip timezone/time suffixes
-    date_only = text.split("Z")[0].split("+")[0].split("T")[0]
-    return date.fromisoformat(date_only.strip())
 
 
 def element_text(elem: Optional[etree._Element]) -> Optional[str]:
