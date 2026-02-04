@@ -21,12 +21,37 @@ from ..schema import (
 from .xml import (
     first_text,
     first_attr,
+    elem_text,
+    elem_attr,
     parse_iso_date,
     element_text,
     parse_monetary_value,
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _parse_optional_int(text: Optional[str], field_name: str) -> Optional[int]:
+    """Parse an optional integer field, returning None for invalid values.
+
+    For optional fields, malformed data (e.g., text where a number is expected)
+    is treated as missing data. Logs a warning for visibility into data quality.
+    """
+    if text is None:
+        return None
+    text = text.strip()
+    if not text:
+        return None
+    try:
+        return int(text)
+    except ValueError:
+        logger.warning(
+            "Invalid integer value for %s: %r (expected numeric value)",
+            field_name,
+            text,
+        )
+        return None
+
 
 FORMAT_NAME = "TED 2.0"
 
@@ -263,23 +288,19 @@ def _extract_contracting_body_r207(
 
     return ContractingBodyModel(
         official_name=official_name,
-        address=address_elem.text if address_elem is not None else None,
-        town=town_elem.text if town_elem is not None else None,
-        postal_code=postal_code_elem.text if postal_code_elem is not None else None,
-        country_code=country_elem.get("VALUE") if country_elem is not None else None,
+        address=elem_text(address_elem),
+        town=elem_text(town_elem),
+        postal_code=elem_text(postal_code_elem),
+        country_code=elem_attr(country_elem, "VALUE"),
         nuts_code=None,
         contact_point=None,
-        phone=phone_elem.text if phone_elem is not None else None,
-        email=email_elem.text if email_elem is not None else None,
-        fax=fax_elem.text if fax_elem is not None else None,
-        url_general=url_general_elem.text if url_general_elem is not None else None,
-        url_buyer=url_buyer_elem.text if url_buyer_elem is not None else None,
-        authority_type_code=(
-            authority_type_elem.get("CODE") if authority_type_elem is not None else None
-        ),
-        main_activity_code=(
-            activity_elem.get("CODE") if activity_elem is not None else None
-        ),
+        phone=elem_text(phone_elem),
+        email=elem_text(email_elem),
+        fax=elem_text(fax_elem),
+        url_general=elem_text(url_general_elem),
+        url_buyer=elem_text(url_buyer_elem),
+        authority_type_code=elem_attr(authority_type_elem, "CODE"),
+        main_activity_code=elem_attr(activity_elem, "CODE"),
     )
 
 
@@ -359,20 +380,14 @@ def _extract_contract_info_r207(root: etree._Element) -> Optional[ContractModel]
     )
 
     return ContractModel(
-        title=element_text(title_elem) if title_elem is not None else "",
+        title=element_text(title_elem) or "",
         reference_number=None,
-        short_description=(
-            element_text(description_elem) if description_elem is not None else None
-        ),
-        main_cpv_code=cpv_main_elem.get("CODE") if cpv_main_elem is not None else None,
-        contract_nature_code=(
-            nature_elem.get("CODE") if nature_elem is not None else None
-        ),
+        short_description=element_text(description_elem),
+        main_cpv_code=elem_attr(cpv_main_elem, "CODE"),
+        contract_nature_code=elem_attr(nature_elem, "CODE"),
         total_value=None,
         total_value_currency=None,
-        procedure_type_code=(
-            procedure_elem.get("CODE") if procedure_elem is not None else None
-        ),
+        procedure_type_code=elem_attr(procedure_elem, "CODE"),
         award_criteria_code=None,
         performance_nuts_code=None,
     )
@@ -457,23 +472,14 @@ def _extract_awards_r207(root: etree._Element) -> List[AwardModel]:
 
         awards.append(
             AwardModel(
-                contract_number=(
-                    contract_number_elem.text
-                    if contract_number_elem is not None
-                    else None
-                ),
-                award_title=(
-                    element_text(title_elem) if title_elem is not None else None
-                ),
+                contract_number=elem_text(contract_number_elem),
+                award_title=element_text(title_elem),
                 conclusion_date=_parse_award_date(award_date_elem),
                 awarded_value=_extract_value_amount(value_elem, currency_elem),
-                awarded_value_currency=(
-                    currency_elem.get("CURRENCY") if currency_elem is not None else None
-                ),
-                tenders_received=(
-                    int(offers_elem.text)
-                    if offers_elem is not None and offers_elem.text
-                    else None
+                awarded_value_currency=elem_attr(currency_elem, "CURRENCY"),
+                tenders_received=_parse_optional_int(
+                    elem_text(offers_elem),
+                    "tenders_received",
                 ),
                 tenders_received_sme=None,
                 tenders_received_other_eu=None,
@@ -532,10 +538,9 @@ def _extract_awards_r209(root: etree._Element) -> List[AwardModel]:
                 awarded_value_currency=(
                     value_elems[0].get("CURRENCY") if value_elems else None
                 ),
-                tenders_received=(
-                    int(offers_elems[0].text)
-                    if offers_elems and offers_elems[0].text
-                    else None
+                tenders_received=_parse_optional_int(
+                    offers_elems[0].text if offers_elems else None,
+                    "tenders_received",
                 ),
                 tenders_received_sme=None,
                 tenders_received_other_eu=None,
@@ -596,14 +601,10 @@ def _extract_contractors_r207(award_elem: etree._Element) -> List[ContractorMode
         contractors.append(
             ContractorModel(
                 official_name=official_name,
-                address=address_elem.text if address_elem is not None else None,
-                town=town_elem.text if town_elem is not None else None,
-                postal_code=(
-                    postal_code_elem.text if postal_code_elem is not None else None
-                ),
-                country_code=(
-                    country_elem.get("VALUE") if country_elem is not None else None
-                ),
+                address=elem_text(address_elem),
+                town=elem_text(town_elem),
+                postal_code=elem_text(postal_code_elem),
+                country_code=elem_attr(country_elem, "VALUE"),
                 nuts_code=None,
                 phone=None,
                 email=None,
