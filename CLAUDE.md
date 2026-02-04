@@ -31,12 +31,14 @@ TED Awards scraper for analyzing EU procurement contract awards from **2008 onwa
    - **Explicit errors**: When parsing fails, error messages must show the actual data value that failed, not just generic messages
    - **Data quality first**: Code should reveal data quality issues, not paper over them with fallbacks
 9. **Single-format parser functions**: Each value parser function handles exactly ONE specific format:
-   - **One function per format**: e.g., `parse_int_plain()`, `parse_monetary_dot_decimal()`, `parse_monetary_comma_decimal()`
-   - **Returns `Optional[T]`**: Returns parsed value if format matches exactly, `None` otherwise
-   - **Warnings on mismatch**: Log the field name and actual value that didn't match: `logger.warning("Invalid value for %s: %r (reason)", field_name, value)`
-   - **No fallbacks between formats**: Caller decides which parser to use, not the parser itself
-   - **Enables parallel development**: Different agents can independently build parser functions for specific formats
-   - **Format discovery**: Running imports with warnings reveals all formats that exist in the data, enabling iterative addition of new parser functions
+   - **One function per format**: e.g., `parse_date_yyyymmdd()`, `parse_monetary_eur_text()`. Never use optional parts in regex to handle multiple formats in one parser.
+   - **Returns `Optional[T]`**: Returns parsed value if format matches exactly, `None` otherwise (silently, no warnings)
+   - **Wrapper functions**: Use `parse_date()` and `parse_monetary_value()` which try all registered parsers. These wrappers:
+     - Log warning when NO parser matches (enables format discovery)
+     - Raise `ValueError` when MULTIPLE parsers match (indicates parsers aren't strict enough)
+   - **No fallbacks**: Each parser is strict. If you see a new format, create a new parser function for it.
+   - **Bad example**: `r"^(?:Value:\s*)?(\d+)\s*EUR$"` - the optional `(?:Value:\s*)?` handles two formats. Instead, create separate parsers for `"Value: 123 EUR"` and `"123 EUR"`.
+   - **Format discovery**: Running imports reveals unhandled formats via warnings, enabling iterative addition of new parser functions
 
 ## Data Source Details
 

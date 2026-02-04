@@ -2,12 +2,9 @@
 Parser for dates in ISO format (YYYY-MM-DD).
 """
 
-import logging
 import re
 from datetime import date
 from typing import Optional
-
-logger = logging.getLogger(__name__)
 
 
 def parse_date_iso(text: str, field_name: str) -> Optional[date]:
@@ -17,7 +14,7 @@ def parse_date_iso(text: str, field_name: str) -> Optional[date]:
     Only accepts: exactly YYYY-MM-DD format with hyphens.
     No timezone, no time component, no other characters.
 
-    Returns None and logs warning if format doesn't match exactly.
+    Returns None if format doesn't match or date is invalid.
     """
     if not text:
         return None
@@ -28,19 +25,9 @@ def parse_date_iso(text: str, field_name: str) -> Optional[date]:
 
     # Must be exactly YYYY-MM-DD
     if not re.match(r"^\d{4}-\d{2}-\d{2}$", stripped):
-        logger.warning(
-            "Invalid %s: %r (expected format: YYYY-MM-DD, e.g., '2024-01-15')",
-            field_name,
-            text,
-        )
         return None
 
     try:
         return date.fromisoformat(stripped)
     except ValueError:
-        logger.warning(
-            "Invalid %s: %r (invalid date)",
-            field_name,
-            text,
-        )
         return None

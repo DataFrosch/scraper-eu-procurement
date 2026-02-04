@@ -13,6 +13,7 @@ from lxml import etree
 
 from .xml import xpath_text
 from .date import parse_date_yyyymmdd
+from .monetary import parse_monetary_value
 from ..schema import (
     TedAwardDataModel,
     DocumentModel,
@@ -275,34 +276,18 @@ def _convert_meta_xml_to_standard_format(
 
 
 def _parse_xml_contract_value(doc_elem: etree._Element) -> Optional[float]:
-    """Extract contract value from XML contents."""
-    # Look for EUR amounts in text content
-    contents_text = ""
-    for text_elem in doc_elem.xpath(".//contents//text()"):
-        contents_text += text_elem + " "
+    """Extract contract value from XML contents.
 
-    if contents_text:
-        value_patterns = [
-            r"EUR\s*([\d,.\s]+)",
-            r"€\s*([\d,.\s]+)",
-            r"([\d,.\s]+)\s*EUR",
-            r"([\d,.\s]+)\s*€",
-        ]
-
-        for pattern in value_patterns:
-            match = re.search(pattern, contents_text, re.IGNORECASE)
-            if match:
-                raw_value = match.group(0)
-                value_str = match.group(1).replace(",", "").replace(" ", "")
-                try:
-                    return float(value_str)
-                except ValueError:
-                    logger.warning(
-                        "Invalid monetary value for %s: %r (extracted from free text, could not parse)",
-                        "contract_value",
-                        raw_value,
-                    )
-                    continue
+    Looks for value text in txtmark elements within the contents section.
+    Each paragraph is passed to parse_monetary_value to try parsing.
+    """
+    # Find all paragraph text in txtmark elements
+    for p_elem in doc_elem.xpath(".//contents//txtmark/p"):
+        text = "".join(p_elem.itertext()).strip()
+        if text:
+            result = parse_monetary_value(text, "contract_value")
+            if result is not None:
+                return result
 
     return None
 
