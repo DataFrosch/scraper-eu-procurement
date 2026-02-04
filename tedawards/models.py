@@ -1,16 +1,13 @@
 """
 SQLAlchemy models for TED awards database.
-Designed for SQLite with easy PostgreSQL migration support.
+Raw source data model - no deduplication at this layer.
 """
 
 from datetime import date, datetime
 from decimal import Decimal
 from typing import List, Optional
 
-from sqlalchemy import (
-    Column, Date, DateTime, ForeignKey, Integer,
-    Numeric, String, Text, Table, UniqueConstraint, Index
-)
+from sqlalchemy import Date, DateTime, ForeignKey, Integer, Numeric, String, Text, Index
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 
@@ -18,25 +15,6 @@ from sqlalchemy.sql import func
 class Base(DeclarativeBase):
     """Base class for all models."""
     pass
-
-
-# Association table for award-contractor many-to-many relationship
-award_contractors = Table(
-    'award_contractors',
-    Base.metadata,
-    Column('award_id', Integer, ForeignKey('awards.id', ondelete='CASCADE'), primary_key=True),
-    Column('contractor_id', Integer, ForeignKey('contractors.id'), primary_key=True),
-    Column('created_at', DateTime, default=func.now())
-)
-
-# Association table for document-contracting_body many-to-many relationship
-document_contracting_bodies = Table(
-    'document_contracting_bodies',
-    Base.metadata,
-    Column('ted_doc_id', String, ForeignKey('ted_documents.doc_id', ondelete='CASCADE'), primary_key=True),
-    Column('contracting_body_id', Integer, ForeignKey('contracting_bodies.id'), primary_key=True),
-    Column('created_at', DateTime, default=func.now())
-)
 
 
 class TEDDocument(Base):
@@ -56,9 +34,7 @@ class TEDDocument(Base):
 
     # Relationships
     contracting_bodies: Mapped[List["ContractingBody"]] = relationship(
-        "ContractingBody",
-        secondary=document_contracting_bodies,
-        back_populates="documents"
+        "ContractingBody", back_populates="document", cascade="all, delete-orphan"
     )
     contracts: Mapped[List["Contract"]] = relationship(
         "Contract", back_populates="document", cascade="all, delete-orphan"
@@ -71,11 +47,11 @@ class TEDDocument(Base):
 
 
 class ContractingBody(Base):
-    """Contracting bodies (purchasing organizations) - shared across documents."""
+    """Contracting body as it appears in a specific document (raw source data)."""
     __tablename__ = 'contracting_bodies'
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    entity_hash: Mapped[str] = mapped_column(String(16), unique=True, nullable=False, index=True)
+    ted_doc_id: Mapped[str] = mapped_column(String, ForeignKey('ted_documents.doc_id', ondelete='CASCADE'), nullable=False)
     official_name: Mapped[str] = mapped_column(Text, nullable=False)
     address: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     town: Mapped[Optional[str]] = mapped_column(String, nullable=True)
@@ -93,16 +69,11 @@ class ContractingBody(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=func.now())
 
     # Relationships
-    documents: Mapped[List["TEDDocument"]] = relationship(
-        "TEDDocument",
-        secondary=document_contracting_bodies,
-        back_populates="contracting_bodies"
-    )
-    contracts: Mapped[List["Contract"]] = relationship(
-        "Contract", back_populates="contracting_body", cascade="all, delete-orphan"
-    )
+    document: Mapped["TEDDocument"] = relationship("TEDDocument", back_populates="contracting_bodies")
+    contracts: Mapped[List["Contract"]] = relationship("Contract", back_populates="contracting_body")
 
     __table_args__ = (
+        Index('idx_contracting_body_doc', 'ted_doc_id'),
         Index('idx_contracting_body_country', 'country_code'),
     )
 
@@ -112,7 +83,7 @@ class Contract(Base):
     __tablename__ = 'contracts'
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    ted_doc_id: Mapped[str] = mapped_column(String, ForeignKey('ted_documents.doc_id'), nullable=False)
+    ted_doc_id: Mapped[str] = mapped_column(String, ForeignKey('ted_documents.doc_id', ondelete='CASCADE'), nullable=False)
     contracting_body_id: Mapped[int] = mapped_column(Integer, ForeignKey('contracting_bodies.id'), nullable=False)
     title: Mapped[str] = mapped_column(Text, nullable=False)
     reference_number: Mapped[Optional[str]] = mapped_column(String, nullable=True)
@@ -128,15 +99,11 @@ class Contract(Base):
     # Relationships
     document: Mapped["TEDDocument"] = relationship("TEDDocument", back_populates="contracts")
     contracting_body: Mapped["ContractingBody"] = relationship("ContractingBody", back_populates="contracts")
-    awards: Mapped[List["Award"]] = relationship(
-        "Award", back_populates="contract", cascade="all, delete-orphan"
-    )
+    awards: Mapped[List["Award"]] = relationship("Award", back_populates="contract", cascade="all, delete-orphan")
 
     __table_args__ = (
-        UniqueConstraint('ted_doc_id', 'title', name='uq_contract_doc_title'),
         Index('idx_contract_document', 'ted_doc_id'),
         Index('idx_contract_body', 'contracting_body_id'),
-        Index('idx_contracts_value', 'total_value'),
         Index('idx_contracts_cpv', 'main_cpv_code'),
     )
 
@@ -146,7 +113,7 @@ class Award(Base):
     __tablename__ = 'awards'
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    contract_id: Mapped[int] = mapped_column(Integer, ForeignKey('contracts.id'), nullable=False)
+    contract_id: Mapped[int] = mapped_column(Integer, ForeignKey('contracts.id', ondelete='CASCADE'), nullable=False)
     contract_number: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     award_title: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     conclusion_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
@@ -164,26 +131,20 @@ class Award(Base):
 
     # Relationships
     contract: Mapped["Contract"] = relationship("Contract", back_populates="awards")
-    contractors: Mapped[List["Contractor"]] = relationship(
-        "Contractor",
-        secondary=award_contractors,
-        back_populates="awards"
-    )
+    contractors: Mapped[List["Contractor"]] = relationship("Contractor", back_populates="award", cascade="all, delete-orphan")
 
     __table_args__ = (
-        UniqueConstraint('contract_id', 'award_title', 'conclusion_date', name='uq_award_contract_title_date'),
         Index('idx_award_contract', 'contract_id'),
         Index('idx_awards_conclusion_date', 'conclusion_date'),
-        Index('idx_awards_value', 'awarded_value'),
     )
 
 
 class Contractor(Base):
-    """Contractors (winning companies/organizations)."""
+    """Contractor as it appears in a specific award (raw source data)."""
     __tablename__ = 'contractors'
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    entity_hash: Mapped[str] = mapped_column(String(16), unique=True, nullable=False, index=True)
+    award_id: Mapped[int] = mapped_column(Integer, ForeignKey('awards.id', ondelete='CASCADE'), nullable=False)
     official_name: Mapped[str] = mapped_column(Text, nullable=False)
     address: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     town: Mapped[Optional[str]] = mapped_column(String, nullable=True)
@@ -198,13 +159,9 @@ class Contractor(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=func.now())
 
     # Relationships
-    awards: Mapped[List["Award"]] = relationship(
-        "Award",
-        secondary=award_contractors,
-        back_populates="contractors"
-    )
+    award: Mapped["Award"] = relationship("Award", back_populates="contractors")
 
     __table_args__ = (
+        Index('idx_contractor_award', 'award_id'),
         Index('idx_contractors_country', 'country_code'),
-        Index('idx_contractors_sme', 'is_sme'),
     )

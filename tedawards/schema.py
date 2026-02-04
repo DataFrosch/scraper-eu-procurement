@@ -4,10 +4,8 @@ Shared across all parsers to ensure consistent data format.
 """
 
 from datetime import date
-from typing import ClassVar, List, Optional
-from pydantic import BaseModel, Field, field_validator, computed_field
-
-from .hashing import HashableMixin
+from typing import List, Optional
+from pydantic import BaseModel, Field, field_validator
 
 
 class DocumentModel(BaseModel):
@@ -29,13 +27,8 @@ class DocumentModel(BaseModel):
         return v.upper() if v else v
 
 
-class ContractingBodyModel(BaseModel, HashableMixin):
+class ContractingBodyModel(BaseModel):
     """Contracting body model."""
-
-    # Key fields for entity hash: name + location
-    # Rationale: Same organization in same town/country = same entity
-    HASH_KEY_FIELDS: ClassVar[List[str]] = ['official_name', 'country_code', 'town']
-
     official_name: str = Field(..., description="Official name of contracting body")
     address: Optional[str] = Field(None, description="Address")
     town: Optional[str] = Field(None, description="Town/city")
@@ -57,12 +50,6 @@ class ContractingBodyModel(BaseModel, HashableMixin):
         """Normalize country codes to uppercase for consistency (ISO standard)."""
         return v.upper() if v else v
 
-    @computed_field
-    @property
-    def entity_hash(self) -> str:
-        """Deterministic hash for deduplication."""
-        return self.compute_hash()
-
 
 class ContractModel(BaseModel):
     """Contract model."""
@@ -78,14 +65,8 @@ class ContractModel(BaseModel):
     performance_nuts_code: Optional[str] = Field(None, description="Performance NUTS code")
 
 
-class ContractorModel(BaseModel, HashableMixin):
+class ContractorModel(BaseModel):
     """Contractor model."""
-
-    # Key fields for entity hash: name + country
-    # Rationale: Company names are usually distinctive, country helps disambiguate
-    # Note: Town excluded as it's often missing for contractors
-    HASH_KEY_FIELDS: ClassVar[List[str]] = ['official_name', 'country_code']
-
     official_name: str = Field(..., description="Official name of contractor")
     address: Optional[str] = Field(None, description="Address")
     town: Optional[str] = Field(None, description="Town/city")
@@ -103,12 +84,6 @@ class ContractorModel(BaseModel, HashableMixin):
     def normalize_country_code(cls, v):
         """Normalize country codes to uppercase for consistency (ISO standard)."""
         return v.upper() if v else v
-
-    @computed_field
-    @property
-    def entity_hash(self) -> str:
-        """Deterministic hash for deduplication."""
-        return self.compute_hash()
 
 
 class AwardModel(BaseModel):
@@ -128,14 +103,6 @@ class AwardModel(BaseModel):
     subcontracting_description: Optional[str] = Field(None, description="Subcontracting description")
     contractors: List[ContractorModel] = Field(default_factory=list, description="List of contractors")
 
-    @field_validator('contractors', mode='before')
-    @classmethod
-    def ensure_contractors_list(cls, v):
-        """Ensure contractors is always a list."""
-        if not v:
-            return []
-        return v
-
 
 class TedAwardDataModel(BaseModel):
     """Complete TED award data model - this is what all parsers should return."""
@@ -154,7 +121,7 @@ class TedAwardDataModel(BaseModel):
 
 
 class TedParserResultModel(BaseModel):
-    """Parser result model - can contain multiple award documents for text format."""
+    """Parser result model - can contain multiple award documents."""
     awards: List[TedAwardDataModel] = Field(..., description="List of award data documents")
 
     @field_validator('awards', mode='before')
@@ -164,5 +131,3 @@ class TedParserResultModel(BaseModel):
         if not isinstance(v, list):
             return [v]
         return v
-
-

@@ -8,8 +8,6 @@ from contextlib import contextmanager
 from dotenv import load_dotenv
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import sessionmaker, Session
-from sqlalchemy.dialects.postgresql import insert as pg_insert
-from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
 from .parsers import ParserFactory
 from .models import Base, TEDDocument, ContractingBody, Contract, Award, Contractor
@@ -156,95 +154,64 @@ def process_file(file_path: Path) -> TedParserResultModel:
 
 
 def save_awards(session: Session, awards: List[TedAwardDataModel]) -> int:
-    """Save award data to database with proper deduplication using RETURNING."""
+    """Save award data to database.
+
+    Skips documents that already exist (idempotent imports).
+    """
     count = 0
-    insert_func = sqlite_insert if engine.dialect.name == 'sqlite' else pg_insert
 
     for award_data in awards:
+        doc_id = award_data.document.doc_id
+
+        # Skip if document already imported
+        existing = session.execute(
+            select(TEDDocument.doc_id).where(TEDDocument.doc_id == doc_id)
+        ).scalar_one_or_none()
+        if existing:
+            logger.debug(f"Document {doc_id} already imported, skipping")
+            continue
+
         try:
-            # Insert/update document with RETURNING to get doc_id
-            doc_values = award_data.document.model_dump()
-            stmt = insert_func(TEDDocument).values(**doc_values)
-            stmt = stmt.on_conflict_do_update(
-                index_elements=['doc_id'],
-                set_={'doc_id': stmt.excluded.doc_id}  # No-op update to trigger RETURNING
-            ).returning(TEDDocument.doc_id)
-            doc_id = session.execute(stmt).scalar_one()
+            # Insert document
+            doc = TEDDocument(**award_data.document.model_dump())
+            session.add(doc)
+            session.flush()
 
-            # Insert/update contracting body with RETURNING to get id
+            # Insert contracting body
             cb_data = award_data.contracting_body.model_dump()
-            cb_hash = award_data.contracting_body.entity_hash
-            cb_data['entity_hash'] = cb_hash
+            cb_data['ted_doc_id'] = doc_id
+            cb = ContractingBody(**cb_data)
+            session.add(cb)
+            session.flush()
 
-            stmt = insert_func(ContractingBody).values(**cb_data)
-            stmt = stmt.on_conflict_do_update(
-                index_elements=['entity_hash'],
-                set_={'entity_hash': stmt.excluded.entity_hash}  # No-op update
-            ).returning(ContractingBody.id)
-            cb_id = session.execute(stmt).scalar_one()
-
-            # Insert document-contracting body relationship with INSERT OR IGNORE
-            from .models import document_contracting_bodies
-            stmt = insert_func(document_contracting_bodies).values(
-                ted_doc_id=doc_id,
-                contracting_body_id=cb_id
-            )
-            stmt = stmt.on_conflict_do_nothing()
-            session.execute(stmt)
-
-            # Insert/update contract with RETURNING to get id
+            # Insert contract
             contract_data = award_data.contract.model_dump()
             contract_data['ted_doc_id'] = doc_id
-            contract_data['contracting_body_id'] = cb_id
+            contract_data['contracting_body_id'] = cb.id
             contract_data.pop('performance_nuts_code', None)
-
-            stmt = insert_func(Contract).values(**contract_data)
-            stmt = stmt.on_conflict_do_update(
-                index_elements=['ted_doc_id', 'title'],
-                set_={'ted_doc_id': stmt.excluded.ted_doc_id}  # No-op update
-            ).returning(Contract.id)
-            contract_id = session.execute(stmt).scalar_one()
+            contract = Contract(**contract_data)
+            session.add(contract)
+            session.flush()
 
             # Insert awards and contractors
             for award_item in award_data.awards:
                 award_dict = award_item.model_dump()
                 contractors_data = award_dict.pop('contractors', [])
-                award_dict['contract_id'] = contract_id
+                award_dict['contract_id'] = contract.id
 
-                # Insert/update award with RETURNING to get id
-                stmt = insert_func(Award).values(**award_dict)
-                stmt = stmt.on_conflict_do_update(
-                    index_elements=['contract_id', 'award_title', 'conclusion_date'],
-                    set_={'contract_id': stmt.excluded.contract_id}  # No-op update
-                ).returning(Award.id)
-                award_id = session.execute(stmt).scalar_one()
+                award = Award(**award_dict)
+                session.add(award)
+                session.flush()
 
-                # Insert contractors and link to awards
-                for contractor_item in award_item.contractors:
-                    contractor_data = contractor_item.model_dump()
-                    contractor_hash = contractor_item.entity_hash
-                    contractor_data['entity_hash'] = contractor_hash
-
-                    stmt = insert_func(Contractor).values(**contractor_data)
-                    stmt = stmt.on_conflict_do_update(
-                        index_elements=['entity_hash'],
-                        set_={'entity_hash': stmt.excluded.entity_hash}  # No-op update
-                    ).returning(Contractor.id)
-                    contractor_id = session.execute(stmt).scalar_one()
-
-                    # Insert award-contractor relationship with INSERT OR IGNORE
-                    from .models import award_contractors
-                    stmt = insert_func(award_contractors).values(
-                        award_id=award_id,
-                        contractor_id=contractor_id
-                    )
-                    stmt = stmt.on_conflict_do_nothing()
-                    session.execute(stmt)
+                for contractor_data in contractors_data:
+                    contractor_data['award_id'] = award.id
+                    contractor = Contractor(**contractor_data)
+                    session.add(contractor)
 
             count += 1
 
         except Exception as e:
-            logger.error(f"Error saving award {award_data.document.doc_id}: {e}")
+            logger.error(f"Error saving award {doc_id}: {e}")
             raise
 
     session.flush()

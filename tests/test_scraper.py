@@ -302,14 +302,14 @@ class TestSaveAwards:
             ).scalar_one()
             assert doc.edition == "2024/S 001-000001"
 
-            # Verify contracting body was saved and linked to document
+            # Verify contracting body was saved with document FK
             cb = session.execute(
                 select(ContractingBody).where(
                     ContractingBody.official_name == "Test Contracting Body"
                 )
             ).scalar_one()
             assert cb.official_name == "Test Contracting Body"
-            assert doc in cb.documents  # Verify many-to-many relationship
+            assert cb.ted_doc_id == "12345-2024"
 
             # Verify contract was saved
             contract = session.execute(
@@ -325,21 +325,19 @@ class TestSaveAwards:
             assert award.awarded_value == Decimal("50000.00")
             assert award.tenders_received == 5
 
-            # Verify contractor was saved
+            # Verify contractor was saved with award FK
             contractor = session.execute(
                 select(Contractor).where(Contractor.official_name == "Test Contractor GmbH")
             ).scalar_one()
             assert contractor.country_code == "DE"
-            assert contractor.is_sme == True  # SQLite stores bool as 0/1
-
-            # Verify relationship
-            assert contractor in award.contractors
+            assert contractor.is_sme == True
+            assert contractor.award_id == award.id
 
         finally:
             session.close()
 
-    def test_save_duplicate_document_ignored(self, test_db, sample_award_data):
-        """Test that duplicate documents are handled via INSERT OR IGNORE."""
+    def test_save_duplicate_document_skipped(self, test_db, sample_award_data):
+        """Test that duplicate documents are skipped (idempotent import)."""
         from tedawards.scraper import SessionLocal
 
         session = SessionLocal()
@@ -349,10 +347,10 @@ class TestSaveAwards:
             session.commit()
             assert count1 == 1
 
-            # Save again with same doc_id
+            # Save again with same doc_id - should be skipped
             count2 = save_awards(session, [sample_award_data])
             session.commit()
-            assert count2 == 1
+            assert count2 == 0  # Skipped because doc already exists
 
             # Verify only one document exists
             docs = session.execute(
@@ -363,11 +361,11 @@ class TestSaveAwards:
         finally:
             session.close()
 
-    def test_save_duplicate_contractor_deduplicated(self, test_db):
-        """Test that duplicate contractors are deduplicated by name+country."""
+    def test_save_same_contractor_in_different_awards(self, test_db):
+        """Test that same contractor in different documents creates separate records (raw data)."""
         from tedawards.scraper import SessionLocal
 
-        # Create two awards with same contractor
+        # Create two awards with same contractor name
         award_data_1 = TedAwardDataModel(
             document=DocumentModel(
                 doc_id="12345-2024",
@@ -427,11 +425,11 @@ class TestSaveAwards:
             save_awards(session, [award_data_1, award_data_2])
             session.commit()
 
-            # Verify only one contractor exists
+            # Raw data model: each occurrence is stored separately
             contractors = session.execute(
                 select(Contractor).where(Contractor.official_name == "Shared Contractor Ltd")
             ).all()
-            assert len(contractors) == 1
+            assert len(contractors) == 2  # One per award (raw source data)
 
         finally:
             session.close()
@@ -498,8 +496,8 @@ class TestSaveAwards:
         finally:
             session.close()
 
-    def test_save_complete_reimport_is_idempotent(self, test_db, sample_award_data):
-        """Test that re-importing the same data is completely idempotent."""
+    def test_save_reimport_is_idempotent(self, test_db, sample_award_data):
+        """Test that re-importing the same data is idempotent (skips existing docs)."""
         from tedawards.scraper import SessionLocal
 
         session = SessionLocal()
@@ -510,44 +508,44 @@ class TestSaveAwards:
             assert count1 == 1
 
             # Count records after first import
-            doc_count_1 = session.execute(select(TEDDocument)).all()
-            cb_count_1 = session.execute(select(ContractingBody)).all()
-            contract_count_1 = session.execute(select(Contract)).all()
-            award_count_1 = session.execute(select(Award)).all()
-            contractor_count_1 = session.execute(select(Contractor)).all()
+            doc_count_1 = len(session.execute(select(TEDDocument)).all())
+            cb_count_1 = len(session.execute(select(ContractingBody)).all())
+            contract_count_1 = len(session.execute(select(Contract)).all())
+            award_count_1 = len(session.execute(select(Award)).all())
+            contractor_count_1 = len(session.execute(select(Contractor)).all())
 
-            assert len(doc_count_1) == 1
-            assert len(cb_count_1) == 1
-            assert len(contract_count_1) == 1
-            assert len(award_count_1) == 1
-            assert len(contractor_count_1) == 1
+            assert doc_count_1 == 1
+            assert cb_count_1 == 1
+            assert contract_count_1 == 1
+            assert award_count_1 == 1
+            assert contractor_count_1 == 1
 
-            # Second import (re-import same data)
+            # Second import (re-import same data) - should skip
             count2 = save_awards(session, [sample_award_data])
             session.commit()
-            assert count2 == 1
+            assert count2 == 0  # Skipped because doc already exists
 
             # Count records after second import - should be identical
-            doc_count_2 = session.execute(select(TEDDocument)).all()
-            cb_count_2 = session.execute(select(ContractingBody)).all()
-            contract_count_2 = session.execute(select(Contract)).all()
-            award_count_2 = session.execute(select(Award)).all()
-            contractor_count_2 = session.execute(select(Contractor)).all()
+            doc_count_2 = len(session.execute(select(TEDDocument)).all())
+            cb_count_2 = len(session.execute(select(ContractingBody)).all())
+            contract_count_2 = len(session.execute(select(Contract)).all())
+            award_count_2 = len(session.execute(select(Award)).all())
+            contractor_count_2 = len(session.execute(select(Contractor)).all())
 
-            assert len(doc_count_2) == 1, "Re-import created duplicate documents"
-            assert len(cb_count_2) == 1, "Re-import created duplicate contracting bodies"
-            assert len(contract_count_2) == 1, "Re-import created duplicate contracts"
-            assert len(award_count_2) == 1, "Re-import created duplicate awards"
-            assert len(contractor_count_2) == 1, "Re-import created duplicate contractors"
+            assert doc_count_2 == 1, "Re-import created duplicate documents"
+            assert cb_count_2 == 1, "Re-import created duplicate contracting bodies"
+            assert contract_count_2 == 1, "Re-import created duplicate contracts"
+            assert award_count_2 == 1, "Re-import created duplicate awards"
+            assert contractor_count_2 == 1, "Re-import created duplicate contractors"
 
         finally:
             session.close()
 
-    def test_contracting_body_shared_across_documents(self, test_db):
-        """Test that same contracting body is shared across multiple documents."""
+    def test_contracting_body_per_document(self, test_db):
+        """Test that each document has its own contracting body record (raw data model)."""
         from tedawards.scraper import SessionLocal
 
-        # Create two documents with the same contracting body
+        # Create two documents with the same contracting body info
         award_data_1 = TedAwardDataModel(
             document=DocumentModel(
                 doc_id="12345-2024",
@@ -594,15 +592,21 @@ class TestSaveAwards:
             docs = session.execute(select(TEDDocument)).all()
             assert len(docs) == 2
 
-            # Verify only ONE contracting body exists
+            # Raw data model: each document has its own contracting body record
             cbs = session.execute(select(ContractingBody)).all()
-            assert len(cbs) == 1, "Same contracting body should be shared, not duplicated"
+            assert len(cbs) == 2, "Each document should have its own contracting body record"
 
-            # Verify the contracting body is linked to both documents
-            cb = cbs[0][0]
-            assert len(cb.documents) == 2, "Contracting body should be linked to both documents"
+            # Verify each contracting body is linked to its document
+            cb1 = session.execute(
+                select(ContractingBody).where(ContractingBody.ted_doc_id == "12345-2024")
+            ).scalar_one()
+            cb2 = session.execute(
+                select(ContractingBody).where(ContractingBody.ted_doc_id == "67890-2024")
+            ).scalar_one()
+            assert cb1.official_name == "Ministry of Health"
+            assert cb2.official_name == "Ministry of Health"
 
-            # Verify two contracts exist (contracts are document-specific)
+            # Verify two contracts exist
             contracts = session.execute(select(Contract)).all()
             assert len(contracts) == 2
 
