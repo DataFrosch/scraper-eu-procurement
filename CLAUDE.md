@@ -7,8 +7,8 @@ TED Awards scraper for analyzing EU procurement contract awards from **2011 onwa
 ## Tech Stack & Requirements
 
 - **Development**: uv for dependency management
-- **Database**: SQLAlchemy ORM
-- **Python**: >=3.12 with lxml, requests, sqlalchemy, pydantic, click
+- **Database**: PostgreSQL 18 via Docker Compose, SQLAlchemy ORM
+- **Python**: >=3.12 with lxml, requests, sqlalchemy, psycopg2-binary, pydantic, click
 
 ## Key Architecture Decisions
 
@@ -147,6 +147,6 @@ uv run tedawards import --start-year 2011 --end-year 2024
 
 ## Environment Variables
 
-- `DB_PATH` - Path to SQLite database file (default: `./tedawards.db`)
+- `DATABASE_URL` - PostgreSQL connection string (default: `postgresql://tedawards:tedawards@localhost:5432/tedawards`)
 - `TED_DATA_DIR` - Local storage for downloaded archives (default: `./data`)
 - `LOG_LEVEL` - Logging configuration (default: `INFO`)

@@ -8,6 +8,7 @@ dependencies = [
     "requests",
     "lxml",
     "sqlalchemy>=2.0",
+    "psycopg2-binary",
     "python-dotenv",
     "click",
     "pydantic",

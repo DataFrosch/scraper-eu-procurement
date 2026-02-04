@@ -18,12 +18,11 @@ load_dotenv()
 logger = logging.getLogger(__name__)
 
 # Database setup
-DB_PATH = Path(os.getenv("DB_PATH", "./tedawards.db"))
-DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-
-engine = create_engine(
-    f"sqlite:///{DB_PATH}", echo=False, connect_args={"check_same_thread": False}
+DATABASE_URL = os.getenv(
+    "DATABASE_URL", "postgresql://tedawards:tedawards@localhost:5432/tedawards"
 )
+
+engine = create_engine(DATABASE_URL, echo=False)
 SessionLocal = sessionmaker(bind=engine, expire_on_commit=False)
 
 # Data directory setup
