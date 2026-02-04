@@ -113,6 +113,16 @@ class TestTedV2R207Parser:
                     f"Contractor name should be present in {fixture_name}"
                 )
 
+    def test_parse_r207_awarded_value_from_text_content(self):
+        """Test that awarded_value is parsed from text content (European format)."""
+        fixture_file = FIXTURES_DIR / "ted_v2_r2_0_7_2011.xml"
+        result = ted_v2.parse_xml_file(fixture_file)
+
+        # First award in fixture has VALUE_COST text "408 000,00"
+        award = result[0].awards[0]
+        assert award.awarded_value == 408000.00
+        assert award.awarded_value_currency == "GBP"
+
 
 class TestTedV2R208Parser:
     """Tests for TED 2.0 R2.0.8 format parser."""

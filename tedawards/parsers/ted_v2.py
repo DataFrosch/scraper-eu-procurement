@@ -24,6 +24,7 @@ from ..schema import (
     AwardModel,
     ContractorModel,
 )
+from .monetary import parse_monetary_value
 from .xml import (
     first_text,
     first_attr,
@@ -475,7 +476,7 @@ def _extract_awards_r207(root: etree._Element) -> List[AwardModel]:
             AwardModel(
                 contract_number=elem_text(contract_number_elem),
                 award_title=element_text(title_elem),
-                awarded_value=_extract_value_amount(value_elem, currency_elem),
+                awarded_value=_extract_value_amount(value_elem),
                 awarded_value_currency=elem_attr(currency_elem, "CURRENCY"),
                 tenders_received=_parse_optional_int(
                     elem_text(offers_elem),
@@ -518,7 +519,7 @@ def _extract_awards_r209(root: etree._Element) -> List[AwardModel]:
                 contract_number=first_text(contract_number_elems),
                 award_title=element_text(title_elems[0]) if title_elems else None,
                 awarded_value=(
-                    _extract_value_amount_r209(value_elems[0]) if value_elems else None
+                    _extract_value_amount(value_elems[0]) if value_elems else None
                 ),
                 awarded_value_currency=(
                     value_elems[0].get("CURRENCY") if value_elems else None
@@ -615,40 +616,17 @@ def _extract_contractors_r209(award_elem: etree._Element) -> List[ContractorMode
     return contractors
 
 
-def _extract_value_amount(
-    value_elem: Optional[etree._Element], currency_elem: Optional[etree._Element]
-) -> Optional[float]:
-    """Extract value amount for R2.0.7/R2.0.8.
+def _extract_value_amount(value_elem: Optional[etree._Element]) -> Optional[float]:
+    """Extract value amount from element text content.
 
-    R2.0.7/R2.0.8 uses VALUE_COST elements with FMTVAL attribute containing
-    the numeric value (e.g., FMTVAL="19979964.32").
+    Works for both R2.0.7/R2.0.8 (VALUE_COST) and R2.0.9 (VAL_TOTAL).
+    Uses strict monetary parsers - warns and returns None for unparseable formats.
     """
     if value_elem is None:
         return None
 
-    fmtval = value_elem.get("FMTVAL")
-    if fmtval is None:
-        text_content = value_elem.text or ""
-        logger.warning(
-            "VALUE_COST element missing FMTVAL attribute: text=%r",
-            text_content.strip(),
-        )
+    text_content = value_elem.text
+    if not text_content:
         return None
 
-    return float(fmtval)
-
-
-def _extract_value_amount_r209(value_elem: Optional[etree._Element]) -> Optional[float]:
-    """Extract value amount for R2.0.9.
-
-    R2.0.9 uses VAL_TOTAL elements with clean decimal text (e.g., "2850000.00").
-    """
-    if value_elem is None:
-        return None
-
-    if not value_elem.text:
-        raise ValueError(
-            f"VAL_TOTAL element has no text content: {etree.tostring(value_elem, encoding='unicode')[:200]}"
-        )
-
-    return float(value_elem.text)
+    return parse_monetary_value(text_content, "awarded_value")
