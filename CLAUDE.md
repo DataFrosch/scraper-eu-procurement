@@ -156,8 +156,6 @@ uv run tedawards scrape --year 2008 --start-issue 1 --max-issue 50
 # Backfill multiple years
 uv run tedawards backfill --start-year 2008 --end-year 2024
 
-# Scrape a specific package by number
-uv run tedawards package --package 200800001
 ```
 
 ## Code Organization

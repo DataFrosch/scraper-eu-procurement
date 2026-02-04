@@ -266,54 +266,6 @@ def save_awards(session: Session, awards: List[TedAwardDataModel]) -> int:
     return count
 
 
-def scrape_package(package_number: int, data_dir: Path = DATA_DIR) -> int:
-    """Scrape TED awards for a specific package number. Returns number of awards processed.
-
-    Args:
-        package_number: TED package number to scrape
-        data_dir: Directory for storing downloaded packages
-
-    Returns:
-        Number of awards processed
-    """
-    # Download and extract daily package
-    files = download_and_extract(package_number, data_dir)
-    if files is None:
-        return 0
-
-    # Process all files and collect awards
-    # Filter for English-only files to avoid processing all language variants
-    english_files = [
-        f for f in files
-        if (
-            # TED META XML: en_*_meta_org.zip or EN_*_META_ORG.ZIP
-            f.name.lower().startswith('en_') and '_meta_org.' in f.name.lower()
-        ) or (
-            # TED INTERNAL_OJS: *.en files
-            f.suffix.lower() == '.en'
-        ) or (
-            # TED 2.0 and eForms: all languages in one file (*.xml)
-            f.suffix.lower() == '.xml'
-        )
-    ]
-
-    all_awards = []
-    for file_path in english_files:
-        parser_result = process_file(file_path)
-        if parser_result:
-            all_awards.extend(parser_result.awards)
-
-    # Save all awards in a single transaction
-    if all_awards:
-        with get_session() as session:
-            saved = save_awards(session, all_awards)
-            logger.info(f"Package {package_number:09d}: Processed {saved} award notices")
-            return saved
-    else:
-        logger.debug(f"Package {package_number:09d}: No award notices found")
-        return 0
-
-
 def scrape_year(year: int, start_issue: Optional[int] = None, max_issue: int = 300, data_dir: Path = DATA_DIR, force_reimport: bool = False):
     """Scrape TED awards for all available packages in a year.
 

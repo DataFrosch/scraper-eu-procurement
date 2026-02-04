@@ -2,7 +2,7 @@ import click
 import logging
 import os
 from datetime import datetime
-from .scraper import scrape_year, scrape_year_range, scrape_package
+from .scraper import scrape_year, scrape_year_range
 
 logging.basicConfig(
     level=getattr(logging, os.getenv('LOG_LEVEL', 'INFO')),
