@@ -704,24 +704,15 @@ def _extract_value_amount(
 
     R2.0.7/R2.0.8 uses VALUE_COST elements with FMTVAL attribute containing
     the numeric value (e.g., FMTVAL="19979964.32").
-
-    Valid FMTVAL values always contain a decimal point (e.g., "888000.00").
-    Corrupt values lack the decimal point and are wildly inflated.
     """
     if value_elem is None:
         return None
 
     fmtval = value_elem.get("FMTVAL")
     if fmtval is None:
-        # No FMTVAL attribute means no numeric value available
-        # (e.g., redacted defense contracts with text like "siehe Ziffer VI.2")
-        return None
-
-    if "." not in fmtval:
         text_content = value_elem.text or ""
         logger.warning(
-            "Corrupt FMTVAL (missing decimal point): FMTVAL=%r, text=%r",
-            fmtval,
+            "VALUE_COST element missing FMTVAL attribute: text=%r",
             text_content.strip(),
         )
         return None
