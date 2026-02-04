@@ -500,6 +500,7 @@ def _extract_awards_r207(root: etree._Element) -> List[AwardModel]:
 
         value_elem = award_elem.find(
             ".//{http://publications.europa.eu/TED_schema/Export}CONTRACT_VALUE_INFORMATION"
+            "//{http://publications.europa.eu/TED_schema/Export}COSTS_RANGE_AND_CURRENCY_WITH_VAT_RATE"
             "//{http://publications.europa.eu/TED_schema/Export}VALUE_COST"
         )
         currency_elem = award_elem.find(
@@ -745,9 +746,9 @@ def _extract_value_amount(
 
     fmtval = value_elem.get("FMTVAL")
     if fmtval is None:
-        raise ValueError(
-            f"VALUE_COST element missing required FMTVAL attribute: {etree.tostring(value_elem, encoding='unicode')[:200]}"
-        )
+        # No FMTVAL attribute means no numeric value available
+        # (e.g., redacted defense contracts with text like "siehe Ziffer VI.2")
+        return None
 
     return float(fmtval)
 

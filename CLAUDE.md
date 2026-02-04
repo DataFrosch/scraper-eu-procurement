@@ -61,18 +61,17 @@ The scraper supports two TED XML document formats:
    - **Language handling**: Daily archives contain **one XML file per document** in its **original language**
      - Each document includes:
        - `FORM_SECTION` with form in original language (e.g., `<F03_2014 LG="DE">`)
-       - `TRANSLATION_SECTION` with **English labels** and translations for all EU languages
        - `CODED_DATA_SECTION` with English descriptions for CPV codes, NUTS, etc.
      - **Parser processes ALL documents regardless of original language**
-     - Extracts English labels from `TRANSLATION_SECTION` when available
-     - Example: A German procurement (`LG="DE"`) includes `<ML_TI_DOC LG="EN">` with English title
+     - Titles and organization names are stored in the original submission language
+     - `TRANSLATION_SECTION` exists but is ignored (only contains translated titles, not form data)
      - **CRITICAL**: Do NOT filter by language - would lose 95%+ of documents
 
 2. **eForms UBL ContractAwardNotice (2025+)**
    - **Format**: UBL-based XML with ContractAwardNotice schema
    - **Namespace**: `urn:oasis:names:specification:ubl:schema:xsd:ContractAwardNotice-2`
    - **Parser**: `EFormsUBLParser` - handles new EU eForms standard
-   - **Language handling**: Similar to TED 2.0 - one file per document with language markers in `languageID` attributes
+   - **Language handling**: One file per document, text fields in original submission language
      - **Parser processes ALL documents regardless of language**
 
 ## Database Architecture

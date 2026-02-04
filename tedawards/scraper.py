@@ -295,7 +295,7 @@ def import_package(package_number: int, data_dir: Path = DATA_DIR) -> int:
             f.suffix.lower() == ".en"
         )
         or (
-            # TED 2.0 and eForms: all languages in one file (*.xml)
+            # TED 2.0 and eForms: one file per document in original language (*.xml)
             f.suffix.lower() == ".xml"
         )
     ]
