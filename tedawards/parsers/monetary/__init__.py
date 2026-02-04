@@ -8,23 +8,35 @@ import logging
 from typing import Callable, Optional
 
 from .float_comma_decimal import parse_float_comma_decimal
+from .float_comma_decimal_1 import parse_float_comma_decimal_1
 from .float_dot_decimal import parse_float_dot_decimal
 from .float_space_thousands import parse_float_space_thousands
+from .float_space_thousands_comma_1 import parse_float_space_thousands_comma_1
+from .float_space_thousands_comma_3 import parse_float_space_thousands_comma_3
+from .int_comma_thousands import parse_int_comma_thousands
 
 logger = logging.getLogger(__name__)
 
 __all__ = [
     "parse_float_comma_decimal",
+    "parse_float_comma_decimal_1",
     "parse_float_dot_decimal",
     "parse_float_space_thousands",
+    "parse_float_space_thousands_comma_1",
+    "parse_float_space_thousands_comma_3",
+    "parse_int_comma_thousands",
     "parse_monetary_value",
 ]
 
 # All available monetary parsers - order doesn't matter since formats are mutually exclusive
 _MONETARY_PARSERS: list[Callable[[str], Optional[float]]] = [
     parse_float_comma_decimal,
+    parse_float_comma_decimal_1,
     parse_float_dot_decimal,
     parse_float_space_thousands,
+    parse_float_space_thousands_comma_1,
+    parse_float_space_thousands_comma_3,
+    parse_int_comma_thousands,
 ]
 
 
