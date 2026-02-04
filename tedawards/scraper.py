@@ -57,37 +57,6 @@ def get_package_number(year: int, issue: int) -> int:
     return year * 100000 + issue
 
 
-def get_last_downloaded_issue(year: int, data_dir: Path = DATA_DIR) -> Optional[int]:
-    """Get the last downloaded issue number for a given year by checking data directory.
-
-    Args:
-        year: Year to check
-        data_dir: Directory where packages are stored
-
-    Returns:
-        Last downloaded issue number for the year, or None if no data exists
-    """
-    # Find all package directories for this year (format: yyyynnnnn)
-    year_prefix = str(year)
-    matching_dirs = []
-
-    for item in data_dir.iterdir():
-        if item.is_dir() and item.name.startswith(year_prefix) and len(item.name) == 9:
-            try:
-                package_num = int(item.name)
-                pkg_year = package_num // 100000
-                pkg_issue = package_num % 100000
-                if pkg_year == year:
-                    matching_dirs.append(pkg_issue)
-            except ValueError:
-                continue
-
-    if not matching_dirs:
-        return None
-
-    return max(matching_dirs)
-
-
 def download_package(package_number: int, data_dir: Path = DATA_DIR) -> bool:
     """Download and extract a single daily package.
 
@@ -107,11 +76,11 @@ def download_package(package_number: int, data_dir: Path = DATA_DIR) -> bool:
     if extract_dir.exists():
         existing_files = [f for f in extract_dir.glob('**/*') if f.is_file()]
         if existing_files:
-            logger.debug(f"Already downloaded: {package_str}")
+            logger.info(f"Package {package_str}: already downloaded")
             return True
 
     # Download package
-    logger.debug(f"Downloading package {package_str} from {package_url}")
+    logger.info(f"Package {package_str}: downloading")
     try:
         response = requests.get(package_url, timeout=30)
         response.raise_for_status()
@@ -282,31 +251,21 @@ def save_awards(session: Session, awards: List[TedAwardDataModel]) -> int:
     return count
 
 
-def download_year(year: int, start_issue: Optional[int] = None, max_issue: int = 300, data_dir: Path = DATA_DIR):
+def download_year(year: int, max_issue: int = 300, data_dir: Path = DATA_DIR):
     """Download TED packages for a year.
 
     Args:
         year: The year to download
-        start_issue: Starting OJ issue number (default: resume from last downloaded + 1)
         max_issue: Maximum issue number to try (default: 300)
         data_dir: Directory for storing downloaded packages
     """
-    # Auto-resume from last downloaded issue if start_issue not specified
-    if start_issue is None:
-        last_issue = get_last_downloaded_issue(year, data_dir)
-        if last_issue is not None:
-            start_issue = last_issue + 1
-            logger.info(f"Resuming from issue {start_issue} (last downloaded: {last_issue})")
-        else:
-            start_issue = 1
-
-    logger.info(f"Downloading TED packages for year {year} (issues {start_issue}-{max_issue}, stopping after 10 consecutive 404s)")
+    logger.info(f"Downloading TED packages for year {year} (issues 1-{max_issue}, stopping after 10 consecutive 404s)")
 
     total_downloaded = 0
     consecutive_404s = 0
     max_consecutive_404s = 10
 
-    for issue in range(start_issue, max_issue + 1):
+    for issue in range(1, max_issue + 1):
         package_number = get_package_number(year, issue)
         success = download_package(package_number, data_dir)
 

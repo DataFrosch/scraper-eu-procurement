@@ -26,11 +26,8 @@ A Python scraper for EU procurement contract award notices from [TED Europa](htt
 
 2. **Download data**:
    ```bash
-   # Download packages for a year (resumes from last downloaded)
+   # Download packages for a year (skips already downloaded)
    uv run tedawards download --year 2024
-
-   # Download specific issue range
-   uv run tedawards download --year 2008 --start-issue 1 --max-issue 50
 
    # Download multiple years
    uv run tedawards download --start-year 2008 --end-year 2024

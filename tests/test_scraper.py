@@ -19,7 +19,6 @@ from tedawards.scraper import (
     process_file,
     save_awards,
     get_session,
-    get_last_downloaded_issue,
     get_downloaded_packages,
     get_package_number,
     download_year,
@@ -712,68 +711,6 @@ class TestGetPackageNumber:
         assert get_package_number(2023, 100) != get_package_number(2024, 100)
 
 
-class TestGetLastDownloadedIssue:
-    """Tests for get_last_downloaded_issue function."""
-
-    def test_no_existing_data(self, temp_data_dir):
-        """Test when no data exists for the year."""
-        result = get_last_downloaded_issue(2024, temp_data_dir)
-        assert result is None
-
-    def test_single_package_downloaded(self, temp_data_dir):
-        """Test with single package directory."""
-        # Create package directory for 2024, issue 1
-        package_dir = temp_data_dir / "202400001"
-        package_dir.mkdir()
-
-        result = get_last_downloaded_issue(2024, temp_data_dir)
-        assert result == 1
-
-    def test_multiple_packages_returns_highest(self, temp_data_dir):
-        """Test that highest issue number is returned."""
-        # Create multiple package directories
-        (temp_data_dir / "202400001").mkdir()
-        (temp_data_dir / "202400005").mkdir()
-        (temp_data_dir / "202400010").mkdir()
-        (temp_data_dir / "202400003").mkdir()
-
-        result = get_last_downloaded_issue(2024, temp_data_dir)
-        assert result == 10
-
-    def test_different_years_isolated(self, temp_data_dir):
-        """Test that different years are properly isolated."""
-        # Create packages for different years
-        (temp_data_dir / "202300050").mkdir()
-        (temp_data_dir / "202400010").mkdir()
-        (temp_data_dir / "202400020").mkdir()
-        (temp_data_dir / "202500005").mkdir()
-
-        assert get_last_downloaded_issue(2023, temp_data_dir) == 50
-        assert get_last_downloaded_issue(2024, temp_data_dir) == 20
-        assert get_last_downloaded_issue(2025, temp_data_dir) == 5
-
-    def test_ignores_non_directory_items(self, temp_data_dir):
-        """Test that files and invalid directories are ignored."""
-        # Create valid package directory
-        (temp_data_dir / "202400010").mkdir()
-
-        # Create files and invalid directories
-        (temp_data_dir / "202400015.txt").write_text("not a directory")
-        (temp_data_dir / "invalid").mkdir()
-        (temp_data_dir / "20240001").mkdir()  # Wrong length
-        (temp_data_dir / "202400abc").mkdir()  # Non-numeric
-
-        result = get_last_downloaded_issue(2024, temp_data_dir)
-        assert result == 10
-
-    def test_high_issue_numbers(self, temp_data_dir):
-        """Test with high issue numbers (close to year boundary)."""
-        (temp_data_dir / "202400253").mkdir()
-
-        result = get_last_downloaded_issue(2024, temp_data_dir)
-        assert result == 253
-
-
 class TestDownloadPackageResumeBehavior:
     """Tests for download_package resume behavior."""
 
@@ -852,50 +789,11 @@ class TestDownloadPackageResumeBehavior:
             assert len(files) == 1
 
 
-class TestDownloadYearResumeBehavior:
-    """Integration tests for download_year resume behavior."""
+class TestDownloadYear:
+    """Tests for download_year function."""
 
-    def test_auto_resume_from_last_issue(self, temp_data_dir):
-        """Test that download_year automatically resumes from last downloaded issue."""
-        # Create existing package directories
-        (temp_data_dir / "202400005").mkdir()
-        (temp_data_dir / "202400010").mkdir()
-
-        # Mock download_package to track which issues are requested
-        requested_issues = []
-
-        def mock_download(package_num, data_dir):
-            issue = package_num % 100000
-            requested_issues.append(issue)
-            # Return False to simulate 404 and stop downloading
-            return False
-
-        with patch('tedawards.scraper.download_package', side_effect=mock_download):
-            download_year(2024, max_issue=20, data_dir=temp_data_dir)
-
-        # Should start from issue 11 (last downloaded was 10)
-        assert requested_issues[0] == 11
-
-    def test_explicit_start_issue_overrides_resume(self, temp_data_dir):
-        """Test that explicit start_issue overrides auto-resume."""
-        # Create existing package directories
-        (temp_data_dir / "202400010").mkdir()
-
-        requested_issues = []
-
-        def mock_download(package_num, data_dir):
-            issue = package_num % 100000
-            requested_issues.append(issue)
-            return False
-
-        with patch('tedawards.scraper.download_package', side_effect=mock_download):
-            download_year(2024, start_issue=5, max_issue=20, data_dir=temp_data_dir)
-
-        # Should start from explicit issue 5, not 11
-        assert requested_issues[0] == 5
-
-    def test_no_existing_data_starts_from_issue_1(self, temp_data_dir):
-        """Test that download starts from issue 1 when no data exists."""
+    def test_starts_from_issue_1(self, temp_data_dir):
+        """Test that download always starts from issue 1."""
         requested_issues = []
 
         def mock_download(package_num, data_dir):
@@ -906,7 +804,6 @@ class TestDownloadYearResumeBehavior:
         with patch('tedawards.scraper.download_package', side_effect=mock_download):
             download_year(2024, max_issue=20, data_dir=temp_data_dir)
 
-        # Should start from issue 1 when no existing data
         assert requested_issues[0] == 1
 
 

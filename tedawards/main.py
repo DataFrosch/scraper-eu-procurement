@@ -18,13 +18,10 @@ def cli():
 @click.option('--year', type=int, help='Single year to download')
 @click.option('--start-year', type=int, help='Start year for range')
 @click.option('--end-year', type=int, help='End year for range (default: current year)')
-@click.option('--start-issue', type=int, default=None,
-              help='Starting OJ issue number (default: resume from last downloaded)')
-@click.option('--max-issue', type=int, default=300,
-              help='Maximum issue number to try (default: 300)')
-def download(year, start_year, end_year, start_issue, max_issue):
+def download(year, start_year, end_year):
     """Download TED packages without importing to database.
 
+    Skips packages that are already downloaded.
     Use --year for a single year, or --start-year/--end-year for a range.
     """
     if year and start_year:
@@ -33,12 +30,12 @@ def download(year, start_year, end_year, start_issue, max_issue):
         raise click.UsageError("Must specify --year or --start-year")
 
     if year:
-        download_year(year, start_issue, max_issue)
+        download_year(year)
     else:
         if end_year is None:
             end_year = datetime.now().year
         for y in range(start_year, end_year + 1):
-            download_year(y, start_issue if y == start_year else None, max_issue)
+            download_year(y)
 
 
 @cli.command(name='import')
