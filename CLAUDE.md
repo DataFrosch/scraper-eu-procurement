@@ -150,16 +150,16 @@ The `ParserFactory` automatically detects and selects the appropriate parser:
 ## Development Commands
 
 ```bash
-# Download packages for a year (skips already downloaded)
-uv run tedawards download --year 2024
+# Download packages for a single year (skips already downloaded)
+uv run tedawards download --start-year 2024
 
-# Download multiple years
+# Download packages for a range of years
 uv run tedawards download --start-year 2008 --end-year 2024
 
-# Import downloaded packages for a year
-uv run tedawards import --year 2024
+# Import downloaded packages for a single year
+uv run tedawards import --start-year 2024
 
-# Import multiple years
+# Import downloaded packages for a range of years
 uv run tedawards import --start-year 2008 --end-year 2024
 ```
 
