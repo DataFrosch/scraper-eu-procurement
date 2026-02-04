@@ -14,8 +14,13 @@ from pathlib import Path
 
 from tedawards.parsers.eforms_ubl import EFormsUBLParser
 from tedawards.schema import (
-    TedParserResultModel, TedAwardDataModel, DocumentModel,
-    ContractingBodyModel, ContractModel, AwardModel, ContractorModel
+    TedParserResultModel,
+    TedAwardDataModel,
+    DocumentModel,
+    ContractingBodyModel,
+    ContractModel,
+    AwardModel,
+    ContractorModel,
 )
 
 
@@ -41,7 +46,9 @@ class TestEFormsUBLParser:
         """Test parser detection for eForms UBL format."""
         fixture_file = FIXTURES_DIR / fixture_name
         assert fixture_file.exists(), f"Fixture file not found: {fixture_file}"
-        assert parser.can_parse(fixture_file), f"Parser should detect eForms UBL format for {fixture_name}"
+        assert parser.can_parse(fixture_file), (
+            f"Parser should detect eForms UBL format for {fixture_name}"
+        )
 
     @pytest.mark.parametrize("fixture_name", EFORMS_UBL_FIXTURES)
     def test_parse_eforms_ubl_document(self, parser, fixture_name):
@@ -52,7 +59,9 @@ class TestEFormsUBLParser:
         # Validate result structure
         assert result is not None, f"Parser should return result for {fixture_name}"
         assert isinstance(result, TedParserResultModel)
-        assert len(result.awards) > 0, f"Should extract at least one award from {fixture_name}"
+        assert len(result.awards) > 0, (
+            f"Should extract at least one award from {fixture_name}"
+        )
 
         # Validate award data
         award_data = result.awards[0]
@@ -62,15 +71,25 @@ class TestEFormsUBLParser:
         document = award_data.document
         assert isinstance(document, DocumentModel)
         assert document.doc_id, f"Document ID should be present in {fixture_name}"
-        assert "2025" in document.doc_id, f"Document ID should contain 2025 in {fixture_name}"
-        assert document.publication_date is not None, f"Publication date should be present in {fixture_name}"
-        assert document.version == "eForms-UBL", f"Version should be eForms-UBL in {fixture_name}"
+        assert "2025" in document.doc_id, (
+            f"Document ID should contain 2025 in {fixture_name}"
+        )
+        assert document.publication_date is not None, (
+            f"Publication date should be present in {fixture_name}"
+        )
+        assert document.version == "eForms-UBL", (
+            f"Version should be eForms-UBL in {fixture_name}"
+        )
 
         # Validate contracting body
         contracting_body = award_data.contracting_body
         assert isinstance(contracting_body, ContractingBodyModel)
-        assert contracting_body.official_name, f"Contracting body name should be present in {fixture_name}"
-        assert contracting_body.country_code, f"Country code should be present in {fixture_name}"
+        assert contracting_body.official_name, (
+            f"Contracting body name should be present in {fixture_name}"
+        )
+        assert contracting_body.country_code, (
+            f"Country code should be present in {fixture_name}"
+        )
 
         # Validate contract
         contract = award_data.contract
@@ -78,7 +97,9 @@ class TestEFormsUBLParser:
         assert contract.title, f"Contract title should be present in {fixture_name}"
 
         # Validate awards
-        assert len(award_data.awards) > 0, f"Should have at least one award in {fixture_name}"
+        assert len(award_data.awards) > 0, (
+            f"Should have at least one award in {fixture_name}"
+        )
         award = award_data.awards[0]
         assert isinstance(award, AwardModel)
 
@@ -86,7 +107,9 @@ class TestEFormsUBLParser:
         if award.contractors:
             for contractor in award.contractors:
                 assert isinstance(contractor, ContractorModel)
-                assert contractor.official_name, f"Contractor name should be present in {fixture_name}"
+                assert contractor.official_name, (
+                    f"Contractor name should be present in {fixture_name}"
+                )
 
     def test_get_format_name(self, parser):
         """Test parser format name."""

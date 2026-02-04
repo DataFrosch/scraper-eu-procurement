@@ -26,7 +26,9 @@ def test_cannot_parse_non_en_files(parser, tmp_path):
     """Test that parser rejects non-.en files."""
     # Create a temporary .de file
     de_file = tmp_path / "test.de"
-    de_file.write_text('<?xml version="1.0"?><INTERNAL_OJS><BIB_DOC_S><NAT_NOTICE>7</NAT_NOTICE></BIB_DOC_S><CONTRACT_AWARD_SUM/></INTERNAL_OJS>')
+    de_file.write_text(
+        '<?xml version="1.0"?><INTERNAL_OJS><BIB_DOC_S><NAT_NOTICE>7</NAT_NOTICE></BIB_DOC_S><CONTRACT_AWARD_SUM/></INTERNAL_OJS>'
+    )
 
     assert parser.can_parse(de_file) is False
 
@@ -35,7 +37,9 @@ def test_cannot_parse_non_award_notice(parser, tmp_path):
     """Test that parser rejects non-award notices."""
     # Create a file with NAT_NOTICE != 7
     non_award = tmp_path / "test.en"
-    non_award.write_text('<?xml version="1.0"?><INTERNAL_OJS><BIB_DOC_S><NAT_NOTICE>2</NAT_NOTICE></BIB_DOC_S><CONTRACT_AWARD_SUM/></INTERNAL_OJS>')
+    non_award.write_text(
+        '<?xml version="1.0"?><INTERNAL_OJS><BIB_DOC_S><NAT_NOTICE>2</NAT_NOTICE></BIB_DOC_S><CONTRACT_AWARD_SUM/></INTERNAL_OJS>'
+    )
 
     assert parser.can_parse(non_award) is False
 

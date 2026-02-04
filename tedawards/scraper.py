@@ -18,18 +18,16 @@ load_dotenv()
 logger = logging.getLogger(__name__)
 
 # Database setup
-DB_PATH = Path(os.getenv('DB_PATH', './tedawards.db'))
+DB_PATH = Path(os.getenv("DB_PATH", "./tedawards.db"))
 DB_PATH.parent.mkdir(parents=True, exist_ok=True)
 
 engine = create_engine(
-    f"sqlite:///{DB_PATH}",
-    echo=False,
-    connect_args={"check_same_thread": False}
+    f"sqlite:///{DB_PATH}", echo=False, connect_args={"check_same_thread": False}
 )
 SessionLocal = sessionmaker(bind=engine, expire_on_commit=False)
 
 # Data directory setup
-DATA_DIR = Path(os.getenv('TED_DATA_DIR', './data'))
+DATA_DIR = Path(os.getenv("TED_DATA_DIR", "./data"))
 DATA_DIR.mkdir(exist_ok=True)
 
 # Parser factory (module-level singleton)
@@ -72,7 +70,7 @@ def download_package(package_number: int, data_dir: Path = DATA_DIR) -> bool:
 
     # Skip if already downloaded and extracted
     if extract_dir.exists():
-        existing_files = [f for f in extract_dir.glob('**/*') if f.is_file()]
+        existing_files = [f for f in extract_dir.glob("**/*") if f.is_file()]
         if existing_files:
             logger.info(f"Package {package_str}: already downloaded")
             return True
@@ -98,8 +96,8 @@ def download_package(package_number: int, data_dir: Path = DATA_DIR) -> bool:
 
     extract_dir.mkdir(exist_ok=True)
     try:
-        with tarfile.open(archive_path, 'r:gz') as tar_file:
-            tar_file.extractall(extract_dir, filter='data')
+        with tarfile.open(archive_path, "r:gz") as tar_file:
+            tar_file.extractall(extract_dir, filter="data")
     except tarfile.TarError as e:
         logger.error(f"Failed to extract package {package_str}: {e}")
         raise
@@ -110,7 +108,9 @@ def download_package(package_number: int, data_dir: Path = DATA_DIR) -> bool:
     return True
 
 
-def get_package_files(package_number: int, data_dir: Path = DATA_DIR) -> Optional[List[Path]]:
+def get_package_files(
+    package_number: int, data_dir: Path = DATA_DIR
+) -> Optional[List[Path]]:
     """Get list of files from an already-downloaded package.
 
     Args:
@@ -126,7 +126,7 @@ def get_package_files(package_number: int, data_dir: Path = DATA_DIR) -> Optiona
     if not extract_dir.exists():
         return None
 
-    files = [f for f in extract_dir.glob('**/*') if f.is_file()]
+    files = [f for f in extract_dir.glob("**/*") if f.is_file()]
     return files if files else None
 
 
@@ -142,10 +142,14 @@ def process_file(file_path: Path) -> TedParserResultModel:
         # Parse file - returns TedParserResultModel
         result = parser.parse_xml_file(file_path)
         if not result:
-            logger.debug(f"Failed to parse {file_path.name} with {parser.get_format_name()}")
+            logger.debug(
+                f"Failed to parse {file_path.name} with {parser.get_format_name()}"
+            )
             return None
 
-        logger.debug(f"Parsed {file_path.name} using {parser.get_format_name()}, found {len(result.awards)} award documents")
+        logger.debug(
+            f"Parsed {file_path.name} using {parser.get_format_name()}, found {len(result.awards)} award documents"
+        )
         return result
 
     except Exception as e:
@@ -172,42 +176,29 @@ def save_awards(session: Session, awards: List[TedAwardDataModel]) -> int:
             continue
 
         try:
-            # Insert document
+            # Create object graph using relationships
             doc = TEDDocument(**award_data.document.model_dump())
-            session.add(doc)
-            session.flush()
 
-            # Insert contracting body
-            cb_data = award_data.contracting_body.model_dump()
-            cb_data['ted_doc_id'] = doc_id
-            cb = ContractingBody(**cb_data)
-            session.add(cb)
-            session.flush()
+            cb = ContractingBody(**award_data.contracting_body.model_dump())
+            doc.contracting_bodies.append(cb)
 
-            # Insert contract
             contract_data = award_data.contract.model_dump()
-            contract_data['ted_doc_id'] = doc_id
-            contract_data['contracting_body_id'] = cb.id
-            contract_data.pop('performance_nuts_code', None)
+            contract_data.pop("performance_nuts_code", None)
             contract = Contract(**contract_data)
-            session.add(contract)
-            session.flush()
+            contract.document = doc
+            contract.contracting_body = cb
 
-            # Insert awards and contractors
             for award_item in award_data.awards:
                 award_dict = award_item.model_dump()
-                contractors_data = award_dict.pop('contractors', [])
-                award_dict['contract_id'] = contract.id
+                contractors_data = award_dict.pop("contractors", [])
 
                 award = Award(**award_dict)
-                session.add(award)
-                session.flush()
+                contract.awards.append(award)
 
                 for contractor_data in contractors_data:
-                    contractor_data['award_id'] = award.id
-                    contractor = Contractor(**contractor_data)
-                    session.add(contractor)
+                    award.contractors.append(Contractor(**contractor_data))
 
+            session.add(doc)
             count += 1
 
         except Exception as e:
@@ -226,7 +217,9 @@ def download_year(year: int, max_issue: int = 300, data_dir: Path = DATA_DIR):
         max_issue: Maximum issue number to try (default: 300)
         data_dir: Directory for storing downloaded packages
     """
-    logger.info(f"Downloading TED packages for year {year} (issues 1-{max_issue}, stopping after 10 consecutive 404s)")
+    logger.info(
+        f"Downloading TED packages for year {year} (issues 1-{max_issue}, stopping after 10 consecutive 404s)"
+    )
 
     total_downloaded = 0
     consecutive_404s = 0
@@ -239,7 +232,9 @@ def download_year(year: int, max_issue: int = 300, data_dir: Path = DATA_DIR):
         if not success:
             consecutive_404s += 1
             if consecutive_404s >= max_consecutive_404s:
-                logger.info(f"Stopping after {max_consecutive_404s} consecutive 404s at issue {issue}")
+                logger.info(
+                    f"Stopping after {max_consecutive_404s} consecutive 404s at issue {issue}"
+                )
                 break
             continue
 
@@ -292,16 +287,19 @@ def import_package(package_number: int, data_dir: Path = DATA_DIR) -> int:
 
     # Filter to processable files
     processable_files = [
-        f for f in files
+        f
+        for f in files
         if (
             # TED META XML: en_*_meta_org.zip or EN_*_META_ORG.ZIP
-            f.name.lower().startswith('en_') and '_meta_org.' in f.name.lower()
-        ) or (
+            f.name.lower().startswith("en_") and "_meta_org." in f.name.lower()
+        )
+        or (
             # TED INTERNAL_OJS: *.en files
-            f.suffix.lower() == '.en'
-        ) or (
+            f.suffix.lower() == ".en"
+        )
+        or (
             # TED 2.0 and eForms: all languages in one file (*.xml)
-            f.suffix.lower() == '.xml'
+            f.suffix.lower() == ".xml"
         )
     ]
 

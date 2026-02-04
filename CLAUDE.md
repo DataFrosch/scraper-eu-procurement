@@ -15,13 +15,18 @@ TED Awards scraper for analyzing EU procurement contract awards from **2008 onwa
 1. **Award-only focus**: Filter XML parsing to only process contract award notices
 2. **Environment configuration**: All DB settings via env vars (.env for dev)
 3. **Year-based scraping**: Scrape by year, iterating through sequential OJ issue numbers (not calendar dates)
-4. **Database deduplication**: Use INSERT ... ON CONFLICT DO NOTHING for documents and contractors to handle duplicates
-5. **No fallbacks or defaults**: Only extract data directly from XML files - no defaults, no fallbacks, no default records. Missing data should be None in Python and NULL in database. If we cannot extract required data, skip the record entirely rather than creating defaults
-6. **Fail-loud error handling**: Errors should always bubble up and cause loud failures. Never silently ignore errors or continue processing with partial data. Use proper exception handling but let errors propagate to calling code for proper error reporting and debugging. This includes:
-   - **Never assume defaults**: If required data is missing (like original language for deduplication), raise an exception rather than assuming a default value
+4. **Raw source data model**: Store data exactly as it appears in each TED document. No deduplication at import time - each document has its own contracting body and contractor records. Deduplication can be done later as a separate layer (views, entity resolution) on top of the raw data.
+5. **Pydantic as parser contract**: Pydantic models in `schema.py` define the interface between parsers and the database layer. This enables:
+   - Fast parser tests without database setup (just validate Pydantic output)
+   - Runtime type validation catches parser bugs early
+   - Clear contract that all parsers must conform to
+   - Parallel development of parsers (each targeting same Pydantic schema)
+6. **No fallbacks or defaults**: Only extract data directly from XML files - no defaults, no fallbacks, no default records. Missing data should be None in Python and NULL in database. If we cannot extract required data, skip the record entirely rather than creating defaults
+7. **Fail-loud error handling**: Errors should always bubble up and cause loud failures. Never silently ignore errors or continue processing with partial data. Use proper exception handling but let errors propagate to calling code for proper error reporting and debugging. This includes:
+   - **Never assume defaults**: If required data is missing, raise an exception rather than assuming a default value
    - **Never gracefully degrade**: If data integrity cannot be guaranteed, fail immediately rather than producing potentially incorrect results
    - **Always validate critical assumptions**: If business logic depends on certain data being present, validate it exists and fail if it doesn't
-7. **Explicit data extraction**: Use built-in Python and standard library methods - no custom utility wrappers. Every assumption about data format must be explicit and testable:
+8. **Explicit data extraction**: Use built-in Python and standard library methods - no custom utility wrappers. Every assumption about data format must be explicit and testable:
    - **Prefer standard library**: Use built-in methods over custom implementations (e.g., Python's date parsing, lxml's text extraction)
    - **Explicit errors**: When parsing fails, error messages must show the actual data value that failed, not just generic messages
    - **Data quality first**: Code should reveal data quality issues, not paper over them with fallbacks
@@ -101,17 +106,15 @@ Database setup handled directly in `scraper.py`:
 - `get_session()` context manager for transaction management with automatic commit/rollback
 - Schema automatically created on scraper initialization
 
-SQLAlchemy models in `models.py`:
+SQLAlchemy models in `models.py` (raw source data, no deduplication):
 
 - `ted_documents` - Main document metadata (PK: doc_id)
-- `contracting_bodies` - Purchasing organizations
-- `contracts` - Procurement items
-- `lots` - Contract subdivisions
-- `awards` - Award decisions
-- `contractors` - Winning companies (unique constraint on official_name + country_code)
-- Reference tables for CPV, NUTS, countries, etc.
+- `contracting_bodies` - Purchasing organizations (one per document, FK to ted_documents)
+- `contracts` - Procurement items (FK to ted_documents and contracting_bodies)
+- `awards` - Award decisions (FK to contracts)
+- `contractors` - Winning companies (one per award, FK to awards)
 
-Deduplication handled via unique constraints and `INSERT ... ON CONFLICT DO NOTHING` (works with both SQLite and PostgreSQL).
+Relationships are 1:many throughout - each document has its own records. Re-importing the same document is idempotent (skipped if doc_id exists).
 
 ## Format Detection & Parser Selection
 
@@ -163,9 +166,9 @@ uv run tedawards import --start-year 2008 --end-year 2024
 ## Code Organization
 
 - `scraper.py` - Main scraper with database setup and session management
-- `models.py` - SQLAlchemy ORM models with schema definitions
-- `schema.py` - Pydantic models for data validation
-- `parsers/` - Format-specific XML parsers
+- `models.py` - SQLAlchemy ORM models (raw source data, no deduplication)
+- `schema.py` - Pydantic models defining the parser output contract (enables fast parser testing without DB)
+- `parsers/` - Format-specific XML parsers (each must return valid Pydantic models)
 - `main.py` - CLI interface
 
 ## Environment Variables

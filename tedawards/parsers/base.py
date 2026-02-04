@@ -4,6 +4,7 @@ from typing import Optional
 
 from ..schema import TedParserResultModel
 
+
 class BaseParser(ABC):
     """Base class for TED XML parsers."""
 

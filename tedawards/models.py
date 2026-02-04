@@ -8,18 +8,31 @@ from decimal import Decimal
 from typing import List, Optional
 
 from sqlalchemy import Date, DateTime, ForeignKey, Integer, Numeric, String, Text, Index
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+from sqlalchemy.orm import (
+    DeclarativeBase,
+    Mapped,
+    mapped_column,
+    relationship,
+    validates,
+)
 from sqlalchemy.sql import func
+
+
+def _normalize_country_code(value: Optional[str]) -> Optional[str]:
+    """Normalize country codes to uppercase (ISO standard)."""
+    return value.upper() if value else value
 
 
 class Base(DeclarativeBase):
     """Base class for all models."""
+
     pass
 
 
 class TEDDocument(Base):
     """Main TED document metadata."""
-    __tablename__ = 'ted_documents'
+
+    __tablename__ = "ted_documents"
 
     doc_id: Mapped[str] = mapped_column(String, primary_key=True)
     edition: Mapped[Optional[str]] = mapped_column(String, nullable=True)
@@ -41,17 +54,24 @@ class TEDDocument(Base):
     )
 
     __table_args__ = (
-        Index('idx_ted_documents_pub_date', 'publication_date'),
-        Index('idx_ted_documents_country', 'source_country'),
+        Index("idx_ted_documents_pub_date", "publication_date"),
+        Index("idx_ted_documents_country", "source_country"),
     )
+
+    @validates("source_country")
+    def validate_source_country(self, key, value):
+        return _normalize_country_code(value)
 
 
 class ContractingBody(Base):
     """Contracting body as it appears in a specific document (raw source data)."""
-    __tablename__ = 'contracting_bodies'
+
+    __tablename__ = "contracting_bodies"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    ted_doc_id: Mapped[str] = mapped_column(String, ForeignKey('ted_documents.doc_id', ondelete='CASCADE'), nullable=False)
+    ted_doc_id: Mapped[str] = mapped_column(
+        String, ForeignKey("ted_documents.doc_id", ondelete="CASCADE"), nullable=False
+    )
     official_name: Mapped[str] = mapped_column(Text, nullable=False)
     address: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     town: Mapped[Optional[str]] = mapped_column(String, nullable=True)
@@ -69,82 +89,125 @@ class ContractingBody(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=func.now())
 
     # Relationships
-    document: Mapped["TEDDocument"] = relationship("TEDDocument", back_populates="contracting_bodies")
-    contracts: Mapped[List["Contract"]] = relationship("Contract", back_populates="contracting_body")
+    document: Mapped["TEDDocument"] = relationship(
+        "TEDDocument", back_populates="contracting_bodies"
+    )
+    contracts: Mapped[List["Contract"]] = relationship(
+        "Contract", back_populates="contracting_body"
+    )
 
     __table_args__ = (
-        Index('idx_contracting_body_doc', 'ted_doc_id'),
-        Index('idx_contracting_body_country', 'country_code'),
+        Index("idx_contracting_body_doc", "ted_doc_id"),
+        Index("idx_contracting_body_country", "country_code"),
     )
+
+    @validates("country_code")
+    def validate_country_code(self, key, value):
+        return _normalize_country_code(value)
 
 
 class Contract(Base):
     """Contract objects (the main procurement items)."""
-    __tablename__ = 'contracts'
+
+    __tablename__ = "contracts"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    ted_doc_id: Mapped[str] = mapped_column(String, ForeignKey('ted_documents.doc_id', ondelete='CASCADE'), nullable=False)
-    contracting_body_id: Mapped[int] = mapped_column(Integer, ForeignKey('contracting_bodies.id'), nullable=False)
+    ted_doc_id: Mapped[str] = mapped_column(
+        String, ForeignKey("ted_documents.doc_id", ondelete="CASCADE"), nullable=False
+    )
+    contracting_body_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("contracting_bodies.id"), nullable=False
+    )
     title: Mapped[str] = mapped_column(Text, nullable=False)
     reference_number: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     short_description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     main_cpv_code: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     contract_nature_code: Mapped[Optional[str]] = mapped_column(String, nullable=True)
-    total_value: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 2), nullable=True)
+    total_value: Mapped[Optional[Decimal]] = mapped_column(
+        Numeric(15, 2), nullable=True
+    )
     total_value_currency: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     procedure_type_code: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     award_criteria_code: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=func.now())
 
     # Relationships
-    document: Mapped["TEDDocument"] = relationship("TEDDocument", back_populates="contracts")
-    contracting_body: Mapped["ContractingBody"] = relationship("ContractingBody", back_populates="contracts")
-    awards: Mapped[List["Award"]] = relationship("Award", back_populates="contract", cascade="all, delete-orphan")
+    document: Mapped["TEDDocument"] = relationship(
+        "TEDDocument", back_populates="contracts"
+    )
+    contracting_body: Mapped["ContractingBody"] = relationship(
+        "ContractingBody", back_populates="contracts"
+    )
+    awards: Mapped[List["Award"]] = relationship(
+        "Award", back_populates="contract", cascade="all, delete-orphan"
+    )
 
     __table_args__ = (
-        Index('idx_contract_document', 'ted_doc_id'),
-        Index('idx_contract_body', 'contracting_body_id'),
-        Index('idx_contracts_cpv', 'main_cpv_code'),
+        Index("idx_contract_document", "ted_doc_id"),
+        Index("idx_contract_body", "contracting_body_id"),
+        Index("idx_contracts_cpv", "main_cpv_code"),
     )
 
 
 class Award(Base):
     """Contract awards (the actual winners)."""
-    __tablename__ = 'awards'
+
+    __tablename__ = "awards"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    contract_id: Mapped[int] = mapped_column(Integer, ForeignKey('contracts.id', ondelete='CASCADE'), nullable=False)
+    contract_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("contracts.id", ondelete="CASCADE"), nullable=False
+    )
     contract_number: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     award_title: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     conclusion_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
     tenders_received: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     tenders_received_sme: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
-    tenders_received_other_eu: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
-    tenders_received_non_eu: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
-    tenders_received_electronic: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
-    awarded_value: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 2), nullable=True)
+    tenders_received_other_eu: Mapped[Optional[int]] = mapped_column(
+        Integer, nullable=True
+    )
+    tenders_received_non_eu: Mapped[Optional[int]] = mapped_column(
+        Integer, nullable=True
+    )
+    tenders_received_electronic: Mapped[Optional[int]] = mapped_column(
+        Integer, nullable=True
+    )
+    awarded_value: Mapped[Optional[Decimal]] = mapped_column(
+        Numeric(15, 2), nullable=True
+    )
     awarded_value_currency: Mapped[Optional[str]] = mapped_column(String, nullable=True)
-    subcontracted_value: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 2), nullable=True)
-    subcontracted_value_currency: Mapped[Optional[str]] = mapped_column(String, nullable=True)
-    subcontracting_description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    subcontracted_value: Mapped[Optional[Decimal]] = mapped_column(
+        Numeric(15, 2), nullable=True
+    )
+    subcontracted_value_currency: Mapped[Optional[str]] = mapped_column(
+        String, nullable=True
+    )
+    subcontracting_description: Mapped[Optional[str]] = mapped_column(
+        Text, nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime, default=func.now())
 
     # Relationships
     contract: Mapped["Contract"] = relationship("Contract", back_populates="awards")
-    contractors: Mapped[List["Contractor"]] = relationship("Contractor", back_populates="award", cascade="all, delete-orphan")
+    contractors: Mapped[List["Contractor"]] = relationship(
+        "Contractor", back_populates="award", cascade="all, delete-orphan"
+    )
 
     __table_args__ = (
-        Index('idx_award_contract', 'contract_id'),
-        Index('idx_awards_conclusion_date', 'conclusion_date'),
+        Index("idx_award_contract", "contract_id"),
+        Index("idx_awards_conclusion_date", "conclusion_date"),
     )
 
 
 class Contractor(Base):
     """Contractor as it appears in a specific award (raw source data)."""
-    __tablename__ = 'contractors'
+
+    __tablename__ = "contractors"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    award_id: Mapped[int] = mapped_column(Integer, ForeignKey('awards.id', ondelete='CASCADE'), nullable=False)
+    award_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("awards.id", ondelete="CASCADE"), nullable=False
+    )
     official_name: Mapped[str] = mapped_column(Text, nullable=False)
     address: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     town: Mapped[Optional[str]] = mapped_column(String, nullable=True)
@@ -162,6 +225,10 @@ class Contractor(Base):
     award: Mapped["Award"] = relationship("Award", back_populates="contractors")
 
     __table_args__ = (
-        Index('idx_contractor_award', 'award_id'),
-        Index('idx_contractors_country', 'country_code'),
+        Index("idx_contractor_award", "award_id"),
+        Index("idx_contractors_country", "country_code"),
     )
+
+    @validates("country_code")
+    def validate_country_code(self, key, value):
+        return _normalize_country_code(value)

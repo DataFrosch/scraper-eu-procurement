@@ -5,19 +5,21 @@ from datetime import datetime
 from .scraper import download_year, import_year
 
 logging.basicConfig(
-    level=getattr(logging, os.getenv('LOG_LEVEL', 'INFO')),
-    format='%(asctime)s - %(levelname)s - %(message)s'
+    level=getattr(logging, os.getenv("LOG_LEVEL", "INFO")),
+    format="%(asctime)s - %(levelname)s - %(message)s",
 )
+
 
 @click.group()
 def cli():
     """TED Awards scraper for EU procurement contract awards."""
     pass
 
+
 @cli.command()
-@click.option('--year', type=int, help='Single year to download')
-@click.option('--start-year', type=int, help='Start year for range')
-@click.option('--end-year', type=int, help='End year for range (default: current year)')
+@click.option("--year", type=int, help="Single year to download")
+@click.option("--start-year", type=int, help="Start year for range")
+@click.option("--end-year", type=int, help="End year for range (default: current year)")
 def download(year, start_year, end_year):
     """Download TED packages without importing to database.
 
@@ -38,10 +40,10 @@ def download(year, start_year, end_year):
             download_year(y)
 
 
-@cli.command(name='import')
-@click.option('--year', type=int, help='Single year to import')
-@click.option('--start-year', type=int, help='Start year for range')
-@click.option('--end-year', type=int, help='End year for range (default: current year)')
+@cli.command(name="import")
+@click.option("--year", type=int, help="Single year to import")
+@click.option("--start-year", type=int, help="Start year for range")
+@click.option("--end-year", type=int, help="End year for range (default: current year)")
 def import_cmd(year, start_year, end_year):
     """Import downloaded TED packages into the database.
 
@@ -61,5 +63,5 @@ def import_cmd(year, start_year, end_year):
             import_year(y)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     cli()

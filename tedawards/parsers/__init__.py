@@ -5,4 +5,11 @@ from .ted_internal_ojs import TedInternalOjsParser
 from .eforms_ubl import EFormsUBLParser
 from .factory import ParserFactory
 
-__all__ = ['BaseParser', 'TedV2Parser', 'TedMetaXmlParser', 'TedInternalOjsParser', 'EFormsUBLParser', 'ParserFactory']
+__all__ = [
+    "BaseParser",
+    "TedV2Parser",
+    "TedMetaXmlParser",
+    "TedInternalOjsParser",
+    "EFormsUBLParser",
+    "ParserFactory",
+]

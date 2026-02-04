@@ -22,3 +22,12 @@ package = true
 
 [tool.setuptools]
 packages = ["tedawards"]
+
+[tool.ruff]
+line-length = 88
+target-version = "py312"
+
+[dependency-groups]
+dev = [
+    "pre-commit>=3.0.0",
+]

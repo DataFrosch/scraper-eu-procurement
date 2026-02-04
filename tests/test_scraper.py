@@ -5,9 +5,9 @@ Tests for scraper.py logic.
 import pytest
 import tempfile
 import tarfile
-from datetime import date, datetime
+from datetime import date
 from pathlib import Path
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import Mock, patch
 from decimal import Decimal
 
 from sqlalchemy import create_engine, select
@@ -23,14 +23,23 @@ from tedawards.scraper import (
     get_package_number,
     download_year,
     import_year,
-    import_package
 )
 from tedawards.models import (
-    Base, TEDDocument, ContractingBody, Contract, Award, Contractor
+    Base,
+    TEDDocument,
+    ContractingBody,
+    Contract,
+    Award,
+    Contractor,
 )
 from tedawards.schema import (
-    TedAwardDataModel, TedParserResultModel, DocumentModel,
-    ContractingBodyModel, ContractModel, AwardModel, ContractorModel
+    TedAwardDataModel,
+    TedParserResultModel,
+    DocumentModel,
+    ContractingBodyModel,
+    ContractModel,
+    AwardModel,
+    ContractorModel,
 )
 
 
@@ -49,8 +58,10 @@ def test_db():
     SessionLocal = sessionmaker(bind=engine, expire_on_commit=False)
 
     # Patch the module-level engine and SessionLocal
-    with patch('tedawards.scraper.engine', engine), \
-         patch('tedawards.scraper.SessionLocal', SessionLocal):
+    with (
+        patch("tedawards.scraper.engine", engine),
+        patch("tedawards.scraper.SessionLocal", SessionLocal),
+    ):
         yield engine
 
 
@@ -62,19 +73,17 @@ def sample_award_data():
             doc_id="12345-2024",
             edition="2024/S 001-000001",
             publication_date=date(2024, 1, 1),
-            source_country="DE"
+            source_country="DE",
         ),
         contracting_body=ContractingBodyModel(
-            official_name="Test Contracting Body",
-            town="Berlin",
-            country_code="DE"
+            official_name="Test Contracting Body", town="Berlin", country_code="DE"
         ),
         contract=ContractModel(
             title="Test Contract",
             reference_number="REF-2024-001",
             main_cpv_code="45000000",
             total_value=100000.0,
-            total_value_currency="EUR"
+            total_value_currency="EUR",
         ),
         awards=[
             AwardModel(
@@ -88,11 +97,11 @@ def sample_award_data():
                         official_name="Test Contractor GmbH",
                         town="Munich",
                         country_code="DE",
-                        is_sme=True
+                        is_sme=True,
                     )
-                ]
+                ],
             )
-        ]
+        ],
     )
 
 
@@ -109,7 +118,7 @@ class TestDownloadPackage:
         xml_file = extract_dir / "test.xml"
         xml_file.write_text("<test/>")
 
-        with patch('requests.get') as mock_get:
+        with patch("requests.get") as mock_get:
             result = download_package(package_number, temp_data_dir)
 
             # Should not make HTTP request
@@ -122,7 +131,7 @@ class TestDownloadPackage:
 
         # Create a mock tar.gz archive with actual content
         tar_path = temp_data_dir / "test.tar.gz"
-        with tarfile.open(tar_path, 'w:gz') as tar:
+        with tarfile.open(tar_path, "w:gz") as tar:
             # Create a temporary XML file to add
             xml_file = temp_data_dir / "temp_test.xml"
             xml_file.write_text("<test/>")
@@ -137,7 +146,7 @@ class TestDownloadPackage:
         mock_response.content = tar_data
         mock_response.raise_for_status = Mock()
 
-        with patch('requests.get', return_value=mock_response):
+        with patch("requests.get", return_value=mock_response):
             result = download_package(package_number, temp_data_dir)
 
             assert result is True
@@ -156,11 +165,14 @@ class TestDownloadPackage:
         package_number = 202400001
 
         import requests
+
         mock_response = Mock()
         mock_response.status_code = 404
-        mock_response.raise_for_status.side_effect = requests.HTTPError(response=mock_response)
+        mock_response.raise_for_status.side_effect = requests.HTTPError(
+            response=mock_response
+        )
 
-        with patch('requests.get', return_value=mock_response):
+        with patch("requests.get", return_value=mock_response):
             result = download_package(package_number, temp_data_dir)
             assert result is False
 
@@ -171,7 +183,7 @@ class TestDownloadPackage:
         mock_response = Mock()
         mock_response.raise_for_status.side_effect = Exception("500 Server Error")
 
-        with patch('requests.get', return_value=mock_response):
+        with patch("requests.get", return_value=mock_response):
             with pytest.raises(Exception, match="500 Server Error"):
                 download_package(package_number, temp_data_dir)
 
@@ -239,7 +251,9 @@ class TestProcessFile:
         mock_parser.get_format_name.return_value = "Test Parser"
 
         # Mock parser factory
-        with patch('tedawards.scraper.parser_factory.get_parser', return_value=mock_parser):
+        with patch(
+            "tedawards.scraper.parser_factory.get_parser", return_value=mock_parser
+        ):
             result = process_file(xml_file)
 
             assert result is not None
@@ -252,7 +266,7 @@ class TestProcessFile:
         xml_file = temp_data_dir / "test.xml"
         xml_file.write_text("<test/>")
 
-        with patch('tedawards.scraper.parser_factory.get_parser', return_value=None):
+        with patch("tedawards.scraper.parser_factory.get_parser", return_value=None):
             result = process_file(xml_file)
             assert result is None
 
@@ -265,7 +279,9 @@ class TestProcessFile:
         mock_parser.parse_xml_file.return_value = None
         mock_parser.get_format_name.return_value = "Test Parser"
 
-        with patch('tedawards.scraper.parser_factory.get_parser', return_value=mock_parser):
+        with patch(
+            "tedawards.scraper.parser_factory.get_parser", return_value=mock_parser
+        ):
             result = process_file(xml_file)
             assert result is None
 
@@ -277,7 +293,9 @@ class TestProcessFile:
         mock_parser = Mock()
         mock_parser.parse_xml_file.side_effect = ValueError("Invalid XML")
 
-        with patch('tedawards.scraper.parser_factory.get_parser', return_value=mock_parser):
+        with patch(
+            "tedawards.scraper.parser_factory.get_parser", return_value=mock_parser
+        ):
             with pytest.raises(ValueError, match="Invalid XML"):
                 process_file(xml_file)
 
@@ -327,10 +345,12 @@ class TestSaveAwards:
 
             # Verify contractor was saved with award FK
             contractor = session.execute(
-                select(Contractor).where(Contractor.official_name == "Test Contractor GmbH")
+                select(Contractor).where(
+                    Contractor.official_name == "Test Contractor GmbH"
+                )
             ).scalar_one()
             assert contractor.country_code == "DE"
-            assert contractor.is_sme == True
+            assert contractor.is_sme is True
             assert contractor.award_id == award.id
 
         finally:
@@ -371,26 +391,21 @@ class TestSaveAwards:
                 doc_id="12345-2024",
                 edition="2024/S 001-000001",
                 publication_date=date(2024, 1, 1),
-                source_country="DE"
+                source_country="DE",
             ),
             contracting_body=ContractingBodyModel(
-                official_name="Test Body 1",
-                country_code="DE"
+                official_name="Test Body 1", country_code="DE"
             ),
-            contract=ContractModel(
-                title="Contract 1",
-                main_cpv_code="45000000"
-            ),
+            contract=ContractModel(title="Contract 1", main_cpv_code="45000000"),
             awards=[
                 AwardModel(
                     contractors=[
                         ContractorModel(
-                            official_name="Shared Contractor Ltd",
-                            country_code="GB"
+                            official_name="Shared Contractor Ltd", country_code="GB"
                         )
                     ]
                 )
-            ]
+            ],
         )
 
         award_data_2 = TedAwardDataModel(
@@ -398,26 +413,21 @@ class TestSaveAwards:
                 doc_id="67890-2024",
                 edition="2024/S 001-000002",
                 publication_date=date(2024, 1, 2),
-                source_country="FR"
+                source_country="FR",
             ),
             contracting_body=ContractingBodyModel(
-                official_name="Test Body 2",
-                country_code="FR"
+                official_name="Test Body 2", country_code="FR"
             ),
-            contract=ContractModel(
-                title="Contract 2",
-                main_cpv_code="45000000"
-            ),
+            contract=ContractModel(title="Contract 2", main_cpv_code="45000000"),
             awards=[
                 AwardModel(
                     contractors=[
                         ContractorModel(
-                            official_name="Shared Contractor Ltd",
-                            country_code="GB"
+                            official_name="Shared Contractor Ltd", country_code="GB"
                         )
                     ]
                 )
-            ]
+            ],
         )
 
         session = SessionLocal()
@@ -427,7 +437,9 @@ class TestSaveAwards:
 
             # Raw data model: each occurrence is stored separately
             contractors = session.execute(
-                select(Contractor).where(Contractor.official_name == "Shared Contractor Ltd")
+                select(Contractor).where(
+                    Contractor.official_name == "Shared Contractor Ltd"
+                )
             ).all()
             assert len(contractors) == 2  # One per award (raw source data)
 
@@ -443,15 +455,13 @@ class TestSaveAwards:
                 doc_id="12345-2024",
                 edition="2024/S 001-000001",
                 publication_date=date(2024, 1, 1),
-                source_country="DE"
+                source_country="DE",
             ),
             contracting_body=ContractingBodyModel(
-                official_name="Test Body",
-                country_code="DE"
+                official_name="Test Body", country_code="DE"
             ),
             contract=ContractModel(
-                title="Multi-lot Contract",
-                main_cpv_code="45000000"
+                title="Multi-lot Contract", main_cpv_code="45000000"
             ),
             awards=[
                 AwardModel(
@@ -459,24 +469,18 @@ class TestSaveAwards:
                     awarded_value=10000.0,
                     awarded_value_currency="EUR",
                     contractors=[
-                        ContractorModel(
-                            official_name="Contractor A",
-                            country_code="DE"
-                        )
-                    ]
+                        ContractorModel(official_name="Contractor A", country_code="DE")
+                    ],
                 ),
                 AwardModel(
                     award_title="Lot 2",
                     awarded_value=20000.0,
                     awarded_value_currency="EUR",
                     contractors=[
-                        ContractorModel(
-                            official_name="Contractor B",
-                            country_code="FR"
-                        )
-                    ]
-                )
-            ]
+                        ContractorModel(official_name="Contractor B", country_code="FR")
+                    ],
+                ),
+            ],
         )
 
         session = SessionLocal()
@@ -550,36 +554,30 @@ class TestSaveAwards:
             document=DocumentModel(
                 doc_id="12345-2024",
                 publication_date=date(2024, 1, 1),
-                source_country="DE"
+                source_country="DE",
             ),
             contracting_body=ContractingBodyModel(
-                official_name="Ministry of Health",
-                country_code="DE",
-                town="Berlin"
+                official_name="Ministry of Health", country_code="DE", town="Berlin"
             ),
             contract=ContractModel(
-                title="Medical Supplies Contract 2024",
-                main_cpv_code="33000000"
+                title="Medical Supplies Contract 2024", main_cpv_code="33000000"
             ),
-            awards=[AwardModel(contractors=[])]
+            awards=[AwardModel(contractors=[])],
         )
 
         award_data_2 = TedAwardDataModel(
             document=DocumentModel(
                 doc_id="67890-2024",
                 publication_date=date(2024, 1, 15),
-                source_country="DE"
+                source_country="DE",
             ),
             contracting_body=ContractingBodyModel(
-                official_name="Ministry of Health",
-                country_code="DE",
-                town="Berlin"
+                official_name="Ministry of Health", country_code="DE", town="Berlin"
             ),
             contract=ContractModel(
-                title="IT Services Contract 2024",
-                main_cpv_code="72000000"
+                title="IT Services Contract 2024", main_cpv_code="72000000"
             ),
-            awards=[AwardModel(contractors=[])]
+            awards=[AwardModel(contractors=[])],
         )
 
         session = SessionLocal()
@@ -594,14 +592,20 @@ class TestSaveAwards:
 
             # Raw data model: each document has its own contracting body record
             cbs = session.execute(select(ContractingBody)).all()
-            assert len(cbs) == 2, "Each document should have its own contracting body record"
+            assert len(cbs) == 2, (
+                "Each document should have its own contracting body record"
+            )
 
             # Verify each contracting body is linked to its document
             cb1 = session.execute(
-                select(ContractingBody).where(ContractingBody.ted_doc_id == "12345-2024")
+                select(ContractingBody).where(
+                    ContractingBody.ted_doc_id == "12345-2024"
+                )
             ).scalar_one()
             cb2 = session.execute(
-                select(ContractingBody).where(ContractingBody.ted_doc_id == "67890-2024")
+                select(ContractingBody).where(
+                    ContractingBody.ted_doc_id == "67890-2024"
+                )
             ).scalar_one()
             assert cb1.official_name == "Ministry of Health"
             assert cb2.official_name == "Ministry of Health"
@@ -624,21 +628,19 @@ class TestSaveAwards:
                 doc_id="12345-2024",
                 edition="2024/S 001-000001",
                 publication_date=date(2024, 1, 1),
-                source_country="DE"
+                source_country="DE",
             ),
-            contracting_body=ContractingBodyModel(
-                official_name="Test Body"
-            ),
-            contract=ContractModel(
-                title="Test Contract"
-            ),
-            awards=[AwardModel()]
+            contracting_body=ContractingBodyModel(official_name="Test Body"),
+            contract=ContractModel(title="Test Contract"),
+            awards=[AwardModel()],
         )
 
         session = SessionLocal()
         try:
             # Mock session.execute to raise an exception
-            with patch.object(session, 'execute', side_effect=Exception("Database error")):
+            with patch.object(
+                session, "execute", side_effect=Exception("Database error")
+            ):
                 with pytest.raises(Exception, match="Database error"):
                     save_awards(session, [valid_data])
         finally:
@@ -650,18 +652,18 @@ class TestGetSession:
 
     def test_session_commits_on_success(self, test_db):
         """Test that session commits when no exception occurs."""
-        from tedawards.scraper import get_session
 
         with get_session() as session:
             doc = TEDDocument(
                 doc_id="test-doc",
                 edition="2024/S 001-000001",
-                publication_date=date(2024, 1, 1)
+                publication_date=date(2024, 1, 1),
             )
             session.add(doc)
 
         # Verify document was committed
         from tedawards.scraper import SessionLocal
+
         verify_session = SessionLocal()
         try:
             result = verify_session.execute(
@@ -673,20 +675,20 @@ class TestGetSession:
 
     def test_session_rolls_back_on_exception(self, test_db):
         """Test that session rolls back when exception occurs."""
-        from tedawards.scraper import get_session
 
         with pytest.raises(ValueError):
             with get_session() as session:
                 doc = TEDDocument(
                     doc_id="test-doc",
                     edition="2024/S 001-000001",
-                    publication_date=date(2024, 1, 1)
+                    publication_date=date(2024, 1, 1),
                 )
                 session.add(doc)
                 raise ValueError("Test error")
 
         # Verify document was NOT committed
         from tedawards.scraper import SessionLocal
+
         verify_session = SessionLocal()
         try:
             result = verify_session.execute(
@@ -728,7 +730,7 @@ class TestDownloadPackageResumeBehavior:
         xml_file = extract_dir / "test.xml"
         xml_file.write_text("<test/>")
 
-        with patch('requests.get') as mock_get:
+        with patch("requests.get") as mock_get:
             result = download_package(package_number, temp_data_dir)
 
             # Should NOT make HTTP request
@@ -741,7 +743,7 @@ class TestDownloadPackageResumeBehavior:
 
         # Create mock tar.gz archive
         tar_path = temp_data_dir / "test.tar.gz"
-        with tarfile.open(tar_path, 'w:gz') as tar:
+        with tarfile.open(tar_path, "w:gz") as tar:
             xml_file = temp_data_dir / "temp.xml"
             xml_file.write_text("<test/>")
             tar.add(xml_file, arcname="test.xml")
@@ -754,7 +756,7 @@ class TestDownloadPackageResumeBehavior:
         mock_response.content = tar_data
         mock_response.raise_for_status = Mock()
 
-        with patch('requests.get', return_value=mock_response):
+        with patch("requests.get", return_value=mock_response):
             result = download_package(package_number, temp_data_dir)
 
             assert result is True
@@ -771,7 +773,7 @@ class TestDownloadPackageResumeBehavior:
 
         # Create mock tar.gz archive
         tar_path = temp_data_dir / "test.tar.gz"
-        with tarfile.open(tar_path, 'w:gz') as tar:
+        with tarfile.open(tar_path, "w:gz") as tar:
             xml_file = temp_data_dir / "temp.xml"
             xml_file.write_text("<test/>")
             tar.add(xml_file, arcname="test.xml")
@@ -784,7 +786,7 @@ class TestDownloadPackageResumeBehavior:
         mock_response.content = tar_data
         mock_response.raise_for_status = Mock()
 
-        with patch('requests.get', return_value=mock_response):
+        with patch("requests.get", return_value=mock_response):
             result = download_package(package_number, temp_data_dir)
 
             # Should download since directory was empty
@@ -805,7 +807,7 @@ class TestDownloadYear:
             requested_issues.append(issue)
             return False
 
-        with patch('tedawards.scraper.download_package', side_effect=mock_download):
+        with patch("tedawards.scraper.download_package", side_effect=mock_download):
             download_year(2024, max_issue=20, data_dir=temp_data_dir)
 
         assert requested_issues[0] == 1
@@ -855,7 +857,7 @@ class TestImportYear:
             imported_packages.append(package_num)
             return 0
 
-        with patch('tedawards.scraper.import_package', side_effect=mock_import):
+        with patch("tedawards.scraper.import_package", side_effect=mock_import):
             import_year(2024, temp_data_dir)
 
         assert imported_packages == [202400001, 202400002, 202400003]

@@ -6,15 +6,16 @@ from .eforms_ubl import EFormsUBLParser
 from .ted_meta_xml import TedMetaXmlParser
 from .ted_internal_ojs import TedInternalOjsParser
 
+
 class ParserFactory:
     """Factory for creating appropriate parsers for different formats."""
 
     def __init__(self):
         self.parsers: List[BaseParser] = [
-            TedMetaXmlParser(),      # Try META XML format first (for legacy 2008-2013 data in ZIP files)
+            TedMetaXmlParser(),  # Try META XML format first (for legacy 2008-2013 data in ZIP files)
             TedInternalOjsParser(),  # INTERNAL_OJS R2.0.5 (2008 .en files)
-            TedV2Parser(),           # Unified TED 2.0 parser (R2.0.7, R2.0.8, R2.0.9)
-            EFormsUBLParser(),       # eForms UBL (2024+)
+            TedV2Parser(),  # Unified TED 2.0 parser (R2.0.7, R2.0.8, R2.0.9)
+            EFormsUBLParser(),  # eForms UBL (2024+)
         ]
 
     def get_parser(self, xml_file: Path) -> Optional[BaseParser]:
