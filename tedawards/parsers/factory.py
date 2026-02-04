@@ -7,14 +7,12 @@ from types import ModuleType
 from typing import List, Optional
 
 from ..schema import TedAwardDataModel
-from . import ted_meta_xml, ted_internal_ojs, ted_v2, eforms_ubl
+from . import ted_v2, eforms_ubl
 
 # Parser modules in priority order
 PARSERS: List[ModuleType] = [
-    ted_meta_xml,  # Try META XML format first (for legacy 2008-2013 data in ZIP files)
-    ted_internal_ojs,  # INTERNAL_OJS R2.0.5 (2008 .en files)
-    ted_v2,  # Unified TED 2.0 parser (R2.0.7, R2.0.8, R2.0.9)
-    eforms_ubl,  # eForms UBL (2024+)
+    ted_v2,  # TED 2.0 parser (R2.0.7, R2.0.8, R2.0.9) - 2011-2024
+    eforms_ubl,  # eForms UBL (2025+)
 ]
 
 

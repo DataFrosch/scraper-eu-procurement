@@ -1,9 +1,15 @@
 """
 TED Version 2.0 parser - unified parser for all TED 2.0 variants.
 Handles R2.0.7, R2.0.8, and R2.0.9 formats (2008-2023).
+
+Date formats in TED 2.0:
+- DATE_PUB, DS_DATE_DISPATCH, DELETION_DATE: YYYYMMDD (e.g., "20110104")
+- DATE_CONCLUSION_CONTRACT (R2.0.9): YYYY-MM-DD (e.g., "2014-01-06")
+- CONTRACT_AWARD_DATE (R2.0.7/R2.0.8): nested <DAY>/<MONTH>/<YEAR> XML elements
 """
 
 import logging
+import re
 from datetime import date
 from pathlib import Path
 from typing import List, Optional
@@ -25,10 +31,58 @@ from .xml import (
     elem_attr,
     element_text,
 )
-from .date import parse_date_yyyymmdd
-from .monetary import parse_float_dot_decimal
 
 logger = logging.getLogger(__name__)
+
+
+def _parse_date_yyyymmdd(text: Optional[str]) -> Optional[date]:
+    """
+    Parse date from YYYYMMDD format (e.g., "20110104").
+
+    Used for: DATE_PUB, DS_DATE_DISPATCH, DELETION_DATE
+    """
+    if not text:
+        return None
+
+    stripped = text.strip()
+    if not stripped:
+        return None
+
+    # Must be exactly 8 digits
+    if not re.match(r"^\d{8}$", stripped):
+        return None
+
+    year = int(stripped[0:4])
+    month = int(stripped[4:6])
+    day = int(stripped[6:8])
+
+    try:
+        return date(year, month, day)
+    except ValueError:
+        return None
+
+
+def _parse_date_iso(text: Optional[str]) -> Optional[date]:
+    """
+    Parse date from ISO format YYYY-MM-DD (e.g., "2014-01-06").
+
+    Used for: DATE_CONCLUSION_CONTRACT (R2.0.9)
+    """
+    if not text:
+        return None
+
+    stripped = text.strip()
+    if not stripped:
+        return None
+
+    # Must be exactly YYYY-MM-DD
+    if not re.match(r"^\d{4}-\d{2}-\d{2}$", stripped):
+        return None
+
+    try:
+        return date.fromisoformat(stripped)
+    except ValueError:
+        return None
 
 
 def _parse_optional_int(text: Optional[str], field_name: str) -> Optional[int]:
@@ -179,7 +233,7 @@ def _extract_document_info(
         logger.debug(f"No publication date found in {xml_file.name}")
         return None
 
-    pub_date = parse_date_yyyymmdd(pub_date_elems[0].text, "publication_date")
+    pub_date = _parse_date_yyyymmdd(pub_date_elems[0].text)
     if pub_date is None:
         logger.debug(f"Could not parse publication date in {xml_file.name}")
         return None
@@ -188,9 +242,7 @@ def _extract_document_info(
     dispatch_date_elems = root.xpath('.//*[local-name()="DS_DATE_DISPATCH"]')
     dispatch_date = None
     if dispatch_date_elems and dispatch_date_elems[0].text:
-        dispatch_date = parse_date_yyyymmdd(
-            dispatch_date_elems[0].text, "dispatch_date"
-        )
+        dispatch_date = _parse_date_yyyymmdd(dispatch_date_elems[0].text)
 
     # Extract other document metadata
     reception_id_elems = root.xpath('.//*[local-name()="RECEPTION_ID"]')
@@ -465,7 +517,7 @@ def _extract_awards_r207(root: etree._Element) -> List[AwardModel]:
             AwardModel(
                 contract_number=elem_text(contract_number_elem),
                 award_title=element_text(title_elem),
-                conclusion_date=_parse_award_date(award_date_elem),
+                conclusion_date=_parse_award_date_r207(award_date_elem),
                 awarded_value=_extract_value_amount(value_elem, currency_elem),
                 awarded_value_currency=elem_attr(currency_elem, "CURRENCY"),
                 tenders_received=_parse_optional_int(
@@ -519,7 +571,7 @@ def _extract_awards_r209(root: etree._Element) -> List[AwardModel]:
                 contract_number=first_text(contract_number_elems),
                 award_title=element_text(title_elems[0]) if title_elems else None,
                 conclusion_date=(
-                    _parse_date_text(award_date_elems[0].text, "conclusion_date")
+                    _parse_date_conclusion_contract(award_date_elems[0].text)
                     if award_date_elems and award_date_elems[0].text
                     else None
                 ),
@@ -641,12 +693,16 @@ def _extract_contractors_r209(award_elem: etree._Element) -> List[ContractorMode
     return contractors
 
 
-def _parse_award_date(date_elem: Optional[etree._Element]) -> Optional[date]:
-    """Parse award date from various formats."""
+def _parse_award_date_r207(date_elem: Optional[etree._Element]) -> Optional[date]:
+    """
+    Parse CONTRACT_AWARD_DATE from R2.0.7/R2.0.8 format.
+
+    R2.0.7/R2.0.8 uses nested <DAY>/<MONTH>/<YEAR> XML elements:
+    <CONTRACT_AWARD_DATE><DAY>15</DAY><MONTH>12</MONTH><YEAR>2010</YEAR></CONTRACT_AWARD_DATE>
+    """
     if date_elem is None:
         return None
 
-    # Try to extract day/month/year components
     day_elem = date_elem.find(".//{http://publications.europa.eu/TED_schema/Export}DAY")
     month_elem = date_elem.find(
         ".//{http://publications.europa.eu/TED_schema/Export}MONTH"
@@ -655,68 +711,58 @@ def _parse_award_date(date_elem: Optional[etree._Element]) -> Optional[date]:
         ".//{http://publications.europa.eu/TED_schema/Export}YEAR"
     )
 
-    if all(elem is not None for elem in [day_elem, month_elem, year_elem]):
-        try:
-            day = int(day_elem.text)
-            month = int(month_elem.text)
-            year = int(year_elem.text)
-            return date(year, month, day)
-        except (ValueError, TypeError):
-            pass
+    # All three elements are required
+    if day_elem is None or month_elem is None or year_elem is None:
+        return None
 
-    # Fall back to direct text if available
-    if hasattr(date_elem, "text") and date_elem.text:
-        return _parse_date_text(date_elem.text, "conclusion_date")
+    if day_elem.text is None or month_elem.text is None or year_elem.text is None:
+        return None
 
-    return None
+    try:
+        day = int(day_elem.text)
+        month = int(month_elem.text)
+        year = int(year_elem.text)
+        return date(year, month, day)
+    except ValueError:
+        return None
 
 
-def _parse_date_text(date_text: str, field_name: str) -> Optional[date]:
-    """Parse date from text string."""
-    return parse_date_yyyymmdd(date_text, field_name)
+def _parse_date_conclusion_contract(date_text: str) -> Optional[date]:
+    """Parse DATE_CONCLUSION_CONTRACT from R2.0.9 ISO format (YYYY-MM-DD)."""
+    return _parse_date_iso(date_text)
 
 
 def _extract_value_amount(
     value_elem: Optional[etree._Element], currency_elem: Optional[etree._Element]
 ) -> Optional[float]:
-    """Extract value amount for R2.0.7/R2.0.8."""
+    """Extract value amount for R2.0.7/R2.0.8.
+
+    R2.0.7/R2.0.8 uses VALUE_COST elements with FMTVAL attribute containing
+    the numeric value (e.g., FMTVAL="19979964.32").
+    """
     if value_elem is None:
         return None
 
-    # Try FMTVAL attribute first (numeric format)
     fmtval = value_elem.get("FMTVAL")
-    if fmtval:
-        try:
-            return float(fmtval)
-        except (ValueError, TypeError):
-            logger.warning(
-                "Invalid monetary value for %s: %r (FMTVAL attribute not numeric)",
-                "awarded_value",
-                fmtval,
-            )
-            return None
+    if fmtval is None:
+        raise ValueError(
+            f"VALUE_COST element missing required FMTVAL attribute: {etree.tostring(value_elem, encoding='unicode')[:200]}"
+        )
 
-    # Fall back to text content
-    if value_elem.text:
-        return parse_float_dot_decimal(value_elem.text, "awarded_value")
-
-    return None
+    return float(fmtval)
 
 
 def _extract_value_amount_r209(value_elem: Optional[etree._Element]) -> Optional[float]:
-    """Extract value amount for R2.0.9."""
+    """Extract value amount for R2.0.9.
+
+    R2.0.9 uses VAL_TOTAL elements with clean decimal text (e.g., "2850000.00").
+    """
     if value_elem is None:
         return None
 
-    if value_elem.text:
-        cleaned = value_elem.text.replace(" ", "").replace(",", "")
-        try:
-            return float(cleaned)
-        except (ValueError, TypeError):
-            logger.warning(
-                "Invalid monetary value for %s: %r (expected numeric value)",
-                "awarded_value",
-                value_elem.text,
-            )
+    if not value_elem.text:
+        raise ValueError(
+            f"VAL_TOTAL element has no text content: {etree.tostring(value_elem, encoding='unicode')[:200]}"
+        )
 
-    return None
+    return float(value_elem.text)

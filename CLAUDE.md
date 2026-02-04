@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-TED Awards scraper for analyzing EU procurement contract awards from **2008 onwards**. Processes XML-formatted TED data, focusing **only on award notices** (document type 7 - "Contract award notice").
+TED Awards scraper for analyzing EU procurement contract awards from **2011 onwards**. Processes XML-formatted TED data, focusing **only on award notices** (document type 7 - "Contract award notice").
 
 ## Tech Stack & Requirements
 
@@ -30,62 +30,30 @@ TED Awards scraper for analyzing EU procurement contract awards from **2008 onwa
    - **Prefer standard library**: Use built-in methods over custom implementations (e.g., Python's date parsing, lxml's text extraction)
    - **Explicit errors**: When parsing fails, error messages must show the actual data value that failed, not just generic messages
    - **Data quality first**: Code should reveal data quality issues, not paper over them with fallbacks
-9. **Single-format parser functions**: Each value parser function handles exactly ONE specific format:
-   - **One function per format**: e.g., `parse_date_yyyymmdd()`, `parse_monetary_eur_text()`. Never use optional parts in regex to handle multiple formats in one parser.
-   - **Returns `Optional[T]`**: Returns parsed value if format matches exactly, `None` otherwise (silently, no warnings)
-   - **Wrapper functions**: Use `parse_date()` and `parse_monetary_value()` which try all registered parsers. These wrappers:
-     - Log warning when NO parser matches (enables format discovery)
-     - Raise `ValueError` when MULTIPLE parsers match (indicates parsers aren't strict enough)
-   - **No fallbacks**: Each parser is strict. If you see a new format, create a new parser function for it.
-   - **Bad example**: `r"^(?:Value:\s*)?(\d+)\s*EUR$"` - the optional `(?:Value:\s*)?` handles two formats. Instead, create separate parsers for `"Value: 123 EUR"` and `"123 EUR"`.
-   - **Format discovery**: Running imports reveals unhandled formats via warnings, enabling iterative addition of new parser functions
+9. **Strict format-specific parsing**: Each XML format has well-defined value structures - use direct parsing without generic wrappers:
+   - **R2.0.7/R2.0.8**: VALUE_COST elements have `FMTVAL` attribute with clean numeric value (e.g., `FMTVAL="19979964.32"`)
+   - **R2.0.9**: VAL_TOTAL elements have clean decimal text (e.g., `2850000.00`)
+   - **No fallbacks**: If expected attribute/format is missing, fail loudly
 
 ## Data Source Details
 
 - **URL Pattern**: `https://ted.europa.eu/packages/daily/{yyyynnnnn}` where `nnnnn` is the Official Journal (OJ S) issue number (e.g., 202400001 = issue 1 of 2024)
-- **Package Numbering**: Sequential issue numbers, NOT calendar days. Issues increment by 1 but skip weekends/holidays (e.g., 2008 ends at issue 253, not 366)
+- **Package Numbering**: Sequential issue numbers, NOT calendar days. Issues increment by 1 but skip weekends/holidays (e.g., typical year has ~250 issues)
 - **File Format**: `.tar.gz` archives containing XML documents
-- **Coverage**: XML data from **January 2008 onwards** (earlier data uses non-XML formats not supported)
+- **Coverage**: XML data from **January 2011 onwards** (earlier 2008-2010 data uses different formats not supported)
 - **Rate Limits**: 3 concurrent downloads, 700 requests/min, 600 downloads per 6min/IP
-- **Scraping Strategy**: Try sequential issue numbers starting from 1, stopping after 10 consecutive 404s (typical year has ~250 issues)
+- **Scraping Strategy**: Try sequential issue numbers starting from 1, stopping after 10 consecutive 404s
 
 ### Supported XML Formats
 
-The scraper supports multiple TED XML document formats:
+The scraper supports two TED XML document formats:
 
-1. **TED META XML (2008-2010)**
-
-   - **Format**: ZIP files containing structured XML text data
-   - **Content**: Multiple ZIP files per language (meta_org.zip variants)
-   - **Parser**: `TedMetaXmlParser` - handles early XML format with structured fields
-   - **First available**: 2008-01-03
-   - **Coverage**: 2008-2010 (overlaps with TED INTERNAL_OJS and early TED 2.0 formats)
-   - **Language handling**: Daily archives contain **separate ZIP files for each language** (`EN_*.zip`, `DE_*.zip`, `FR_*.zip`, etc.)
-     - Each ZIP contains documents in that specific language only
-     - Parser only processes English files (`EN_*` files)
-     - Language filter: `doc.get('lg', '').upper() == 'EN'`
-     - Documents have `lg="en"` attribute (lowercase in META XML format)
-
-2. **TED INTERNAL_OJS R2.0.5 (2008)**
-
-   - **Format**: Individual XML files with language-specific extensions (`.en`, `.de`, `.fr`, etc.)
-   - **Root element**: `<INTERNAL_OJS>` wrapper
-   - **Award forms**: `<CONTRACT_AWARD_SUM>` with `<FD_CONTRACT_AWARD_SUM>` content
-   - **Parser**: `TedInternalOjsParser` - handles INTERNAL_OJS wrapper format
-   - **First available**: 2008 (specific dates vary)
-   - **Coverage**: 2008 only (transitional format between META XML and TED 2.0)
-   - **File structure**: Directories containing `{doc_id}_{year}.{lang}` files (e.g., `114495_2008.en`)
-   - **Language handling**: Parser only processes `.en` files (English language)
-     - Each document is a separate file per language
-     - Award identification via `<NAT_NOTICE>7</NAT_NOTICE>` in `BIB_DOC_S` section
-   - **Document ID pattern**: `ojs-{NO_DOC_OJS}` (e.g., `ojs-2008/S 85-114495`)
-
-3. **TED 2.0 XML (2011-2024)** - **Unified Parser**
+1. **TED 2.0 XML (2011-2024)** - **Unified Parser**
 
    - **Variants**:
-     - **R2.0.7 (2011-2013)**: XML with CONTRACT_AWARD forms, early structure
-     - **R2.0.8 (2014-2015)**: XML with CONTRACT_AWARD forms, enhanced structure
-     - **R2.0.9 (2014-2024)**: XML with F03_2014 forms, modern structure
+     - **R2.0.7 (2011-2013)**: XML with CONTRACT_AWARD forms, VALUE_COST with FMTVAL attribute
+     - **R2.0.8 (2014-2015)**: XML with CONTRACT_AWARD forms, VALUE_COST with FMTVAL attribute
+     - **R2.0.9 (2014-2024)**: XML with F03_2014 forms, VAL_TOTAL with clean decimal text
    - **Format**: XML with TED_EXPORT namespace
    - **File naming**: `{6-8digits}_{year}.xml` (e.g., 000248_2012.xml)
    - **Parser**: `TedV2Parser` - unified parser handling all TED 2.0 variants with automatic format detection
@@ -100,7 +68,7 @@ The scraper supports multiple TED XML document formats:
      - Example: A German procurement (`LG="DE"`) includes `<ML_TI_DOC LG="EN">` with English title
      - **CRITICAL**: Do NOT filter by language - would lose 95%+ of documents
 
-4. **eForms UBL ContractAwardNotice (2025+)**
+2. **eForms UBL ContractAwardNotice (2025+)**
    - **Format**: UBL-based XML with ContractAwardNotice schema
    - **Namespace**: `urn:oasis:names:specification:ubl:schema:xsd:ContractAwardNotice-2`
    - **Parser**: `EFormsUBLParser` - handles new EU eForms standard
@@ -129,16 +97,14 @@ Relationships are 1:many throughout - each document has its own records. Re-impo
 
 The `ParserFactory` automatically detects and selects the appropriate parser:
 
-- **Priority Order**: TedMetaXmlParser → TedInternalOjsParser → TedV2Parser → EFormsUBLParser
+- **Priority Order**: TedV2Parser → EFormsUBLParser
 - **Detection**: Each parser has a `can_parse()` method to identify compatible formats
-- **File Types**: Handles `.xml` files, `.en` files, and `.ZIP` archives
+- **File Types**: Handles `.xml` files
 - **TED 2.0 Auto-Detection**: The unified TedV2Parser automatically detects R2.0.7, R2.0.8, or R2.0.9 variants
 
 ### Archive Structure
 
 - **TED 2.0 (2011+)**: `.tar.gz` containing individual `.xml` files with TED_EXPORT namespace
-- **TED INTERNAL_OJS (2008)**: `.tar.gz` containing directories with language-specific files (`.en`, `.de`, etc.)
-- **TED META XML (2008-2010)**: `.tar.gz` containing ZIP files (`*_meta_org.zip`) with structured XML data
 
 ## Key XML Data Structures
 
@@ -147,14 +113,14 @@ The `ParserFactory` automatically detects and selects the appropriate parser:
 - `TED_EXPORT/CODED_DATA_SECTION` - Document metadata
 - `TED_EXPORT/FORM_SECTION/F03_2014` - Award notice data
   - `CONTRACTING_BODY` - Buyer info
-  - `OBJECT_CONTRACT` - Contract details
+  - `OBJECT_CONTRACT` - Contract details with `VAL_TOTAL` (clean decimal text)
   - `AWARD_CONTRACT` - Winner and value info
 
-### TED META XML Format
+### TED 2.0 R2.0.7/R2.0.8 (CONTRACT_AWARD)
 
-- ZIP-based XML format with structured fields
-- `TD: 7 - Contract award` identifies award notices
-- `ND` field provides universal document identifier across languages
+- `TED_EXPORT/CODED_DATA_SECTION` - Document metadata
+- `TED_EXPORT/FORM_SECTION/CONTRACT_AWARD` - Award notice data
+  - `VALUE_COST` elements with `FMTVAL` attribute containing numeric value
 
 ## Development Commands
 
@@ -163,13 +129,13 @@ The `ParserFactory` automatically detects and selects the appropriate parser:
 uv run tedawards download --start-year 2024
 
 # Download packages for a range of years
-uv run tedawards download --start-year 2008 --end-year 2024
+uv run tedawards download --start-year 2011 --end-year 2024
 
 # Import downloaded packages for a single year
 uv run tedawards import --start-year 2024
 
 # Import downloaded packages for a range of years
-uv run tedawards import --start-year 2008 --end-year 2024
+uv run tedawards import --start-year 2011 --end-year 2024
 ```
 
 ## Code Organization

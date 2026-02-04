@@ -1,9 +1,14 @@
 """
 eForms UBL ContractAwardNotice parser for EU eForms standard (2025+).
+
+Date formats in eForms UBL:
+- IssueDate, PublicationDate: YYYY-MM-DD+HH:MM or YYYY-MM-DDZ
+  Examples: "2025-01-02+01:00", "2024-12-30Z"
 """
 
 import logging
 import re
+from datetime import date
 from pathlib import Path
 from typing import List, Optional
 
@@ -18,7 +23,34 @@ from ..schema import (
     ContractorModel,
 )
 from .xml import first_text
-from .date import parse_date_iso_offset
+
+
+def _parse_date_eforms(text: Optional[str]) -> Optional[date]:
+    """
+    Parse date from eForms format: YYYY-MM-DD+HH:MM or YYYY-MM-DDZ
+
+    Examples: "2025-01-02+01:00", "2024-12-30-05:00", "2024-12-30Z"
+    Extracts just the date portion, discarding the timezone.
+    """
+    if not text:
+        return None
+
+    stripped = text.strip()
+    if not stripped:
+        return None
+
+    # Accept: YYYY-MM-DD+HH:MM, YYYY-MM-DD-HH:MM, or YYYY-MM-DDZ
+    if not re.match(r"^\d{4}-\d{2}-\d{2}([+-]\d{2}:\d{2}|Z)$", stripped):
+        return None
+
+    # Extract just the date part (first 10 characters)
+    date_part = stripped[:10]
+
+    try:
+        return date.fromisoformat(date_part)
+    except ValueError:
+        return None
+
 
 logger = logging.getLogger(__name__)
 
@@ -118,7 +150,7 @@ def _extract_document_info(
         logger.error(f"No publication date found in eForms document {xml_file}")
         return None
 
-    pub_date = parse_date_iso_offset(pub_date_elem[0].text, "publication_date")
+    pub_date = _parse_date_eforms(pub_date_elem[0].text)
     if pub_date is None:
         logger.debug(f"Could not parse publication date in {xml_file}")
         return None
@@ -301,9 +333,7 @@ def _extract_awards(root: etree._Element) -> List[AwardModel]:
         )
         conclusion_date_parsed = None
         if conclusion_date_elem and conclusion_date_elem[0].text:
-            conclusion_date_parsed = parse_date_iso_offset(
-                conclusion_date_elem[0].text, "conclusion_date"
-            )
+            conclusion_date_parsed = _parse_date_eforms(conclusion_date_elem[0].text)
 
         # Get tender information
         tender_amount = root.xpath(

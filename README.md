@@ -1,13 +1,11 @@
 # TED Awards Scraper
 
-A Python scraper for EU procurement contract award notices from [TED Europa](https://ted.europa.eu/). Processes XML-formatted TED data from **2008 onwards**.
+A Python scraper for EU procurement contract award notices from [TED Europa](https://ted.europa.eu/). Processes XML-formatted TED data from **2011 onwards**.
 
 ## Features
 
-- Scrapes TED award notice packages by year from **January 2008 onwards** (document type 7 only)
+- Scrapes TED award notice packages by year from **January 2011 onwards** (document type 7 only)
 - Supports multiple XML formats:
-  - TED META XML (2008-2010) - Early XML format in ZIP archives
-  - TED INTERNAL_OJS R2.0.5 (2008) - Transitional INTERNAL_OJS wrapper format
   - TED 2.0 R2.0.7-R2.0.9 (2011-2024) - Standard TED XML formats
   - eForms UBL (2025+) - New EU eForms standard
 - SQLite database with comprehensive procurement schema (PostgreSQL also supported)
@@ -30,7 +28,7 @@ A Python scraper for EU procurement contract award notices from [TED Europa](htt
    uv run tedawards download --year 2024
 
    # Download multiple years
-   uv run tedawards download --start-year 2008 --end-year 2024
+   uv run tedawards download --start-year 2011 --end-year 2024
    ```
 
 3. **Import to database**:
@@ -39,7 +37,7 @@ A Python scraper for EU procurement contract award notices from [TED Europa](htt
    uv run tedawards import --year 2024
 
    # Import multiple years
-   uv run tedawards import --start-year 2008 --end-year 2024
+   uv run tedawards import --start-year 2011 --end-year 2024
    ```
 
 4. **Query data**:
@@ -70,8 +68,6 @@ Key tables:
 ## Architecture
 
 - **Parsers**: Automatically detects and processes multiple XML formats
-  - `TedMetaXmlParser` - TED META XML format (2008-2010)
-  - `TedInternalOjsParser` - TED INTERNAL_OJS R2.0.5 format (2008)
   - `TedV2Parser` - TED 2.0 R2.0.7/R2.0.8/R2.0.9 formats (2011-2024)
   - `EFormsUBLParser` - eForms UBL ContractAwardNotice (2025+)
 - **Database**: SQLite with comprehensive procurement schema (PostgreSQL also supported)
@@ -81,17 +77,16 @@ Key tables:
 ## Package Numbering
 
 TED packages use **Official Journal (OJ S) issue numbers**, not calendar dates:
-- Format: `{year}{issue_number:05d}` (e.g., `200800001` = issue 1 of 2008)
+- Format: `{year}{issue_number:05d}` (e.g., `201100001` = issue 1 of 2011)
 - Issues are sequential but skip weekends/holidays
 - Typical year has ~250 issues (not 365 days)
 - Scraper automatically handles gaps by stopping after 10 consecutive 404s
 
 ## Data Coverage
 
-- **Time Range**: January 2008 to present (17+ years of XML-formatted data)
+- **Time Range**: January 2011 to present (14+ years of XML-formatted data)
 - **Data Quality**:
-  - ✅ 93.3% of awards include conclusion dates
-  - ✅ All key procurement data extracted accurately
-  - ✅ Handles multiple XML formats and variations
-  - ✅ Consistent processing across different archive dates
-- **Format Support**: All major TED XML formats (META XML, INTERNAL_OJS R2.0.5, R2.0.7-R2.0.9, eForms UBL)
+  - All key procurement data extracted accurately
+  - Handles multiple XML formats and variations
+  - Consistent processing across different archive dates
+- **Format Support**: TED 2.0 (R2.0.7-R2.0.9) and eForms UBL
