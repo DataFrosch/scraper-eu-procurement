@@ -2,13 +2,8 @@
 
 import pytest
 from pathlib import Path
-from tedawards.parsers.ted_internal_ojs import TedInternalOjsParser
-
-
-@pytest.fixture
-def parser():
-    """Create parser instance."""
-    return TedInternalOjsParser()
+from tedawards.parsers import ted_internal_ojs
+from tedawards.parsers.xml import parse_monetary_value
 
 
 @pytest.fixture
@@ -17,12 +12,12 @@ def sample_file():
     return Path(__file__).parent.parent / "fixtures" / "ted_internal_ojs_r2_0_5_2008.en"
 
 
-def test_can_parse_internal_ojs_format(parser, sample_file):
+def test_can_parse_internal_ojs_format(sample_file):
     """Test that parser correctly identifies INTERNAL_OJS format."""
-    assert parser.can_parse(sample_file) is True
+    assert ted_internal_ojs.can_parse(sample_file) is True
 
 
-def test_cannot_parse_non_en_files(parser, tmp_path):
+def test_cannot_parse_non_en_files(tmp_path):
     """Test that parser rejects non-.en files."""
     # Create a temporary .de file
     de_file = tmp_path / "test.de"
@@ -30,10 +25,10 @@ def test_cannot_parse_non_en_files(parser, tmp_path):
         '<?xml version="1.0"?><INTERNAL_OJS><BIB_DOC_S><NAT_NOTICE>7</NAT_NOTICE></BIB_DOC_S><CONTRACT_AWARD_SUM/></INTERNAL_OJS>'
     )
 
-    assert parser.can_parse(de_file) is False
+    assert ted_internal_ojs.can_parse(de_file) is False
 
 
-def test_cannot_parse_non_award_notice(parser, tmp_path):
+def test_cannot_parse_non_award_notice(tmp_path):
     """Test that parser rejects non-award notices."""
     # Create a file with NAT_NOTICE != 7
     non_award = tmp_path / "test.en"
@@ -41,22 +36,22 @@ def test_cannot_parse_non_award_notice(parser, tmp_path):
         '<?xml version="1.0"?><INTERNAL_OJS><BIB_DOC_S><NAT_NOTICE>2</NAT_NOTICE></BIB_DOC_S><CONTRACT_AWARD_SUM/></INTERNAL_OJS>'
     )
 
-    assert parser.can_parse(non_award) is False
+    assert ted_internal_ojs.can_parse(non_award) is False
 
 
-def test_get_format_name(parser):
+def test_get_format_name():
     """Test format name is correct."""
-    assert parser.get_format_name() == "TED INTERNAL_OJS R2.0.5"
+    assert ted_internal_ojs.get_format_name() == "TED INTERNAL_OJS R2.0.5"
 
 
-def test_parse_xml_file(parser, sample_file):
+def test_parse_xml_file(sample_file):
     """Test parsing of INTERNAL_OJS file."""
-    result = parser.parse_xml_file(sample_file)
+    result = ted_internal_ojs.parse_xml_file(sample_file)
 
     assert result is not None
-    assert len(result.awards) == 1
+    assert len(result) == 1
 
-    award_data = result.awards[0]
+    award_data = result[0]
 
     # Check document info
     assert award_data.document.doc_id == "ojs-2008/S 85-114495"
@@ -100,19 +95,19 @@ def test_parse_xml_file(parser, sample_file):
     assert contractor.phone == "(370-37) 32 80 29"
 
 
-def test_parse_value_formatting(parser):
+def test_parse_monetary_value_formatting():
     """Test value parsing with different formats."""
     # Test space-separated thousands
-    assert parser._parse_value("16 425,6") == 16425.6
+    assert parse_monetary_value("16 425,6") == 16425.6
 
     # Test plain number
-    assert parser._parse_value("16425.6") == 16425.6
+    assert parse_monetary_value("16425.6") == 16425.6
 
     # Test comma as decimal separator
-    assert parser._parse_value("16425,60") == 16425.60
+    assert parse_monetary_value("16425,60") == 16425.60
 
     # Test invalid value
-    assert parser._parse_value("invalid") is None
+    assert parse_monetary_value("invalid") is None
 
     # Test empty value
-    assert parser._parse_value("") is None
+    assert parse_monetary_value("") is None

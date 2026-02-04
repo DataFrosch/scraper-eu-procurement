@@ -136,19 +136,3 @@ class TedAwardDataModel(BaseModel):
         if not v:
             raise ValueError("Awards list cannot be empty")
         return v
-
-
-class TedParserResultModel(BaseModel):
-    """Parser result model - can contain multiple award documents."""
-
-    awards: List[TedAwardDataModel] = Field(
-        ..., description="List of award data documents"
-    )
-
-    @field_validator("awards", mode="before")
-    @classmethod
-    def ensure_awards_list(cls, v):
-        """Ensure awards is always a list."""
-        if not isinstance(v, list):
-            return [v]
-        return v

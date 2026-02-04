@@ -9,9 +9,9 @@ from dotenv import load_dotenv
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import sessionmaker, Session
 
-from .parsers import ParserFactory
+from .parsers import get_parser
 from .models import Base, TEDDocument, ContractingBody, Contract, Award, Contractor
-from .schema import TedAwardDataModel, TedParserResultModel
+from .schema import TedAwardDataModel
 
 load_dotenv()
 
@@ -29,9 +29,6 @@ SessionLocal = sessionmaker(bind=engine, expire_on_commit=False)
 # Data directory setup
 DATA_DIR = Path(os.getenv("TED_DATA_DIR", "./data"))
 DATA_DIR.mkdir(exist_ok=True)
-
-# Parser factory (module-level singleton)
-parser_factory = ParserFactory()
 
 
 @contextmanager
@@ -82,7 +79,7 @@ def download_package(package_number: int, data_dir: Path = DATA_DIR) -> bool:
         response.raise_for_status()
     except requests.HTTPError as e:
         if e.response.status_code == 404:
-            logger.debug(f"Package not available (404): {package_str}")
+            logger.info(f"Package {package_str}: not found")
             return False
         logger.error(f"Failed to download package {package_str}: {e}")
         raise
@@ -130,16 +127,16 @@ def get_package_files(
     return files if files else None
 
 
-def process_file(file_path: Path) -> TedParserResultModel:
+def process_file(file_path: Path) -> Optional[List[TedAwardDataModel]]:
     """Process a single file (XML or ZIP) and return parser result."""
     try:
-        # Get appropriate parser for this file
-        parser = parser_factory.get_parser(file_path)
+        # Get appropriate parser module for this file
+        parser = get_parser(file_path)
         if not parser:
             logger.debug(f"No parser available for {file_path.name}")
             return None
 
-        # Parse file - returns TedParserResultModel
+        # Parse file - returns List[TedAwardDataModel]
         result = parser.parse_xml_file(file_path)
         if not result:
             logger.debug(
@@ -148,7 +145,7 @@ def process_file(file_path: Path) -> TedParserResultModel:
             return None
 
         logger.debug(
-            f"Parsed {file_path.name} using {parser.get_format_name()}, found {len(result.awards)} award documents"
+            f"Parsed {file_path.name} using {parser.get_format_name()}, found {len(result)} award documents"
         )
         return result
 
@@ -305,9 +302,9 @@ def import_package(package_number: int, data_dir: Path = DATA_DIR) -> int:
 
     all_awards = []
     for file_path in processable_files:
-        parser_result = process_file(file_path)
-        if parser_result:
-            all_awards.extend(parser_result.awards)
+        awards = process_file(file_path)
+        if awards:
+            all_awards.extend(awards)
 
     if not all_awards:
         return 0

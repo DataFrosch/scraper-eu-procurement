@@ -12,9 +12,8 @@ These tests validate:
 import pytest
 from pathlib import Path
 
-from tedawards.parsers.ted_meta_xml import TedMetaXmlParser
+from tedawards.parsers import ted_meta_xml
 from tedawards.schema import (
-    TedParserResultModel,
     TedAwardDataModel,
     DocumentModel,
     ContractingBodyModel,
@@ -36,37 +35,28 @@ TED_META_FIXTURES = [
 class TestTedMetaXmlParser:
     """Tests for TED META XML format parser (2008-2013)."""
 
-    @pytest.fixture
-    def parser(self):
-        """Create a TED META XML parser instance."""
-        return TedMetaXmlParser()
-
     @pytest.mark.parametrize("fixture_name", TED_META_FIXTURES)
-    def test_can_parse_meta_format(self, parser, fixture_name):
+    def test_can_parse_meta_format(self, fixture_name):
         """Test parser detection for TED META XML format."""
         fixture_file = FIXTURES_DIR / fixture_name
         assert fixture_file.exists(), f"Fixture file not found: {fixture_file}"
-        assert parser.can_parse(fixture_file), (
+        assert ted_meta_xml.can_parse(fixture_file), (
             f"Parser should detect META format for {fixture_name}"
         )
 
     @pytest.mark.parametrize("fixture_name", TED_META_FIXTURES)
-    def test_parse_meta_document(self, parser, fixture_name):
+    def test_parse_meta_document(self, fixture_name):
         """Test parsing TED META XML format document."""
         fixture_file = FIXTURES_DIR / fixture_name
-        result = parser.parse_xml_file(fixture_file)
+        result = ted_meta_xml.parse_xml_file(fixture_file)
 
         # Validate result structure
         assert result is not None, f"Parser should return result for {fixture_name}"
-        assert isinstance(result, TedParserResultModel), (
-            "Result should be TedParserResultModel"
-        )
-        assert len(result.awards) > 0, (
-            f"Should extract at least one award from {fixture_name}"
-        )
+        assert isinstance(result, list), "Result should be list"
+        assert len(result) > 0, f"Should extract at least one award from {fixture_name}"
 
         # Validate first award data
-        award_data = result.awards[0]
+        award_data = result[0]
         assert isinstance(award_data, TedAwardDataModel)
 
         # Validate document
@@ -99,9 +89,9 @@ class TestTedMetaXmlParser:
         award = award_data.awards[0]
         assert isinstance(award, AwardModel)
 
-    def test_get_format_name(self, parser):
+    def test_get_format_name(self):
         """Test parser format name."""
-        assert parser.get_format_name() == "TED META XML"
+        assert ted_meta_xml.get_format_name() == "TED META XML"
 
 
 if __name__ == "__main__":

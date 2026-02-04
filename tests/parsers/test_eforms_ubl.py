@@ -12,9 +12,8 @@ These tests validate:
 import pytest
 from pathlib import Path
 
-from tedawards.parsers.eforms_ubl import EFormsUBLParser
+from tedawards.parsers import eforms_ubl
 from tedawards.schema import (
-    TedParserResultModel,
     TedAwardDataModel,
     DocumentModel,
     ContractingBodyModel,
@@ -36,35 +35,28 @@ EFORMS_UBL_FIXTURES = [
 class TestEFormsUBLParser:
     """Tests for eForms UBL ContractAwardNotice format parser."""
 
-    @pytest.fixture
-    def parser(self):
-        """Create an eForms UBL parser instance."""
-        return EFormsUBLParser()
-
     @pytest.mark.parametrize("fixture_name", EFORMS_UBL_FIXTURES)
-    def test_can_parse_eforms_ubl_format(self, parser, fixture_name):
+    def test_can_parse_eforms_ubl_format(self, fixture_name):
         """Test parser detection for eForms UBL format."""
         fixture_file = FIXTURES_DIR / fixture_name
         assert fixture_file.exists(), f"Fixture file not found: {fixture_file}"
-        assert parser.can_parse(fixture_file), (
+        assert eforms_ubl.can_parse(fixture_file), (
             f"Parser should detect eForms UBL format for {fixture_name}"
         )
 
     @pytest.mark.parametrize("fixture_name", EFORMS_UBL_FIXTURES)
-    def test_parse_eforms_ubl_document(self, parser, fixture_name):
+    def test_parse_eforms_ubl_document(self, fixture_name):
         """Test parsing eForms UBL format document."""
         fixture_file = FIXTURES_DIR / fixture_name
-        result = parser.parse_xml_file(fixture_file)
+        result = eforms_ubl.parse_xml_file(fixture_file)
 
         # Validate result structure
         assert result is not None, f"Parser should return result for {fixture_name}"
-        assert isinstance(result, TedParserResultModel)
-        assert len(result.awards) > 0, (
-            f"Should extract at least one award from {fixture_name}"
-        )
+        assert isinstance(result, list)
+        assert len(result) > 0, f"Should extract at least one award from {fixture_name}"
 
         # Validate award data
-        award_data = result.awards[0]
+        award_data = result[0]
         assert isinstance(award_data, TedAwardDataModel)
 
         # Validate document
@@ -111,9 +103,9 @@ class TestEFormsUBLParser:
                     f"Contractor name should be present in {fixture_name}"
                 )
 
-    def test_get_format_name(self, parser):
+    def test_get_format_name(self):
         """Test parser format name."""
-        assert parser.get_format_name() == "eForms UBL ContractAwardNotice"
+        assert eforms_ubl.get_format_name() == "eForms UBL ContractAwardNotice"
 
 
 if __name__ == "__main__":

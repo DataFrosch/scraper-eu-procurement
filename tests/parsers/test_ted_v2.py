@@ -17,9 +17,8 @@ import pytest
 from pathlib import Path
 from datetime import date
 
-from tedawards.parsers.ted_v2 import TedV2Parser
+from tedawards.parsers import ted_v2
 from tedawards.schema import (
-    TedParserResultModel,
     TedAwardDataModel,
     DocumentModel,
     ContractingBodyModel,
@@ -50,35 +49,28 @@ TED_V2_R209_FIXTURES = [
 class TestTedV2R207Parser:
     """Tests for TED 2.0 R2.0.7 format parser."""
 
-    @pytest.fixture
-    def parser(self):
-        """Create a TED V2 parser instance."""
-        return TedV2Parser()
-
     @pytest.mark.parametrize("fixture_name", TED_V2_R207_FIXTURES)
-    def test_can_parse_r207_format(self, parser, fixture_name):
+    def test_can_parse_r207_format(self, fixture_name):
         """Test parser detection for R2.0.7 format."""
         fixture_file = FIXTURES_DIR / fixture_name
         assert fixture_file.exists(), f"Fixture file not found: {fixture_file}"
-        assert parser.can_parse(fixture_file), (
+        assert ted_v2.can_parse(fixture_file), (
             f"Parser should detect R2.0.7 format for {fixture_name}"
         )
 
     @pytest.mark.parametrize("fixture_name", TED_V2_R207_FIXTURES)
-    def test_parse_r207_document(self, parser, fixture_name):
+    def test_parse_r207_document(self, fixture_name):
         """Test parsing R2.0.7 format document."""
         fixture_file = FIXTURES_DIR / fixture_name
-        result = parser.parse_xml_file(fixture_file)
+        result = ted_v2.parse_xml_file(fixture_file)
 
         # Validate result structure
         assert result is not None, f"Parser should return result for {fixture_name}"
-        assert isinstance(result, TedParserResultModel)
-        assert len(result.awards) > 0, (
-            f"Should extract at least one award from {fixture_name}"
-        )
+        assert isinstance(result, list)
+        assert len(result) > 0, f"Should extract at least one award from {fixture_name}"
 
         # Validate award data
-        award_data = result.awards[0]
+        award_data = result[0]
         assert isinstance(award_data, TedAwardDataModel)
 
         # Validate document
@@ -125,35 +117,28 @@ class TestTedV2R207Parser:
 class TestTedV2R208Parser:
     """Tests for TED 2.0 R2.0.8 format parser."""
 
-    @pytest.fixture
-    def parser(self):
-        """Create a TED V2 parser instance."""
-        return TedV2Parser()
-
     @pytest.mark.parametrize("fixture_name", TED_V2_R208_FIXTURES)
-    def test_can_parse_r208_format(self, parser, fixture_name):
+    def test_can_parse_r208_format(self, fixture_name):
         """Test parser detection for R2.0.8 format."""
         fixture_file = FIXTURES_DIR / fixture_name
         assert fixture_file.exists(), f"Fixture file not found: {fixture_file}"
-        assert parser.can_parse(fixture_file), (
+        assert ted_v2.can_parse(fixture_file), (
             f"Parser should detect R2.0.8 format for {fixture_name}"
         )
 
     @pytest.mark.parametrize("fixture_name", TED_V2_R208_FIXTURES)
-    def test_parse_r208_document(self, parser, fixture_name):
+    def test_parse_r208_document(self, fixture_name):
         """Test parsing R2.0.8 format document."""
         fixture_file = FIXTURES_DIR / fixture_name
-        result = parser.parse_xml_file(fixture_file)
+        result = ted_v2.parse_xml_file(fixture_file)
 
         # Validate result structure
         assert result is not None, f"Parser should return result for {fixture_name}"
-        assert isinstance(result, TedParserResultModel)
-        assert len(result.awards) > 0, (
-            f"Should extract at least one award from {fixture_name}"
-        )
+        assert isinstance(result, list)
+        assert len(result) > 0, f"Should extract at least one award from {fixture_name}"
 
         # Validate award data
-        award_data = result.awards[0]
+        award_data = result[0]
         assert isinstance(award_data, TedAwardDataModel)
 
         # Validate document
@@ -200,32 +185,27 @@ class TestTedV2R208Parser:
 class TestTedV2R209Parser:
     """Tests for TED 2.0 R2.0.9 format parser (F03_2014 forms)."""
 
-    @pytest.fixture
-    def parser(self):
-        """Create a TED V2 parser instance."""
-        return TedV2Parser()
-
     @pytest.mark.parametrize("fixture_name", TED_V2_R209_FIXTURES)
-    def test_can_parse_r209_format(self, parser, fixture_name):
+    def test_can_parse_r209_format(self, fixture_name):
         """Test parser detection for R2.0.9 format."""
         fixture_file = FIXTURES_DIR / fixture_name
         assert fixture_file.exists(), f"Fixture file not found: {fixture_file}"
-        assert parser.can_parse(fixture_file), (
+        assert ted_v2.can_parse(fixture_file), (
             f"Parser should detect R2.0.9 format for {fixture_name}"
         )
 
-    def test_parse_r209_document_detailed(self, parser):
+    def test_parse_r209_document_detailed(self):
         """Test parsing R2.0.9 format document with detailed validation (2024 fixture only)."""
         fixture_file = FIXTURES_DIR / "ted_v2_r2_0_9_2024.xml"
-        result = parser.parse_xml_file(fixture_file)
+        result = ted_v2.parse_xml_file(fixture_file)
 
         # Validate result structure
         assert result is not None, "Parser should return result"
-        assert isinstance(result, TedParserResultModel)
-        assert len(result.awards) > 0, "Should extract at least one award"
+        assert isinstance(result, list)
+        assert len(result) > 0, "Should extract at least one award"
 
         # Validate award data
-        award_data = result.awards[0]
+        award_data = result[0]
         assert isinstance(award_data, TedAwardDataModel)
 
         # Validate document
@@ -278,20 +258,18 @@ class TestTedV2R209Parser:
         assert contractor.country_code == "DE", "Contractor country should be Germany"
 
     @pytest.mark.parametrize("fixture_name", TED_V2_R209_FIXTURES)
-    def test_parse_r209_document(self, parser, fixture_name):
+    def test_parse_r209_document(self, fixture_name):
         """Test parsing R2.0.9 format document (all fixtures)."""
         fixture_file = FIXTURES_DIR / fixture_name
-        result = parser.parse_xml_file(fixture_file)
+        result = ted_v2.parse_xml_file(fixture_file)
 
         # Validate result structure
         assert result is not None, f"Parser should return result for {fixture_name}"
-        assert isinstance(result, TedParserResultModel)
-        assert len(result.awards) > 0, (
-            f"Should extract at least one award from {fixture_name}"
-        )
+        assert isinstance(result, list)
+        assert len(result) > 0, f"Should extract at least one award from {fixture_name}"
 
         # Validate award data
-        award_data = result.awards[0]
+        award_data = result[0]
         assert isinstance(award_data, TedAwardDataModel)
 
         # Validate document
@@ -327,9 +305,9 @@ class TestTedV2R209Parser:
         award = award_data.awards[0]
         assert isinstance(award, AwardModel)
 
-    def test_get_format_name(self, parser):
+    def test_get_format_name(self):
         """Test parser format name."""
-        assert parser.get_format_name() == "TED 2.0"
+        assert ted_v2.get_format_name() == "TED 2.0"
 
 
 class TestDataValidation:
@@ -338,11 +316,10 @@ class TestDataValidation:
     def test_date_fields_are_valid(self):
         """Test that date fields are properly validated."""
         fixture_file = FIXTURES_DIR / "ted_v2_r2_0_9_2024.xml"
-        parser = TedV2Parser()
-        result = parser.parse_xml_file(fixture_file)
+        result = ted_v2.parse_xml_file(fixture_file)
 
         assert result is not None
-        award_data = result.awards[0]
+        award_data = result[0]
 
         # Check date fields
         assert isinstance(award_data.document.publication_date, date)
@@ -356,11 +333,10 @@ class TestDataValidation:
     def test_country_codes_are_uppercase(self):
         """Test that country codes are normalized to uppercase."""
         fixture_file = FIXTURES_DIR / "ted_v2_r2_0_9_2024.xml"
-        parser = TedV2Parser()
-        result = parser.parse_xml_file(fixture_file)
+        result = ted_v2.parse_xml_file(fixture_file)
 
         assert result is not None
-        award_data = result.awards[0]
+        award_data = result[0]
 
         # Check country codes
         if award_data.document.source_country:
@@ -376,11 +352,10 @@ class TestDataValidation:
     def test_contractor_names_are_present(self):
         """Test that contractors have valid names."""
         fixture_file = FIXTURES_DIR / "ted_v2_r2_0_9_2024.xml"
-        parser = TedV2Parser()
-        result = parser.parse_xml_file(fixture_file)
+        result = ted_v2.parse_xml_file(fixture_file)
 
         assert result is not None
-        award_data = result.awards[0]
+        award_data = result[0]
 
         for award in award_data.awards:
             if award.contractors:
