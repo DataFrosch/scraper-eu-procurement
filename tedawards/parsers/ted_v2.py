@@ -85,40 +85,6 @@ def _parse_optional_int(text: Optional[str], field_name: str) -> Optional[int]:
         return None
 
 
-FORMAT_NAME = "TED 2.0"
-
-
-def can_parse(xml_file: Path) -> bool:
-    """Check if this file uses any TED 2.0 format variant."""
-    try:
-        tree = etree.parse(xml_file)
-        root = tree.getroot()
-
-        # Check for TED_EXPORT root element (namespace-agnostic check)
-        if not root.tag.endswith("}TED_EXPORT") and root.tag != "TED_EXPORT":
-            return False
-
-        # Check if it's document type 7 (Contract award)
-        doc_type = root.xpath('.//*[local-name()="TD_DOCUMENT_TYPE"][@CODE="7"]')
-        if not doc_type:
-            return False
-
-        # Must have either CONTRACT_AWARD (R2.0.7/R2.0.8) or F03_2014 (R2.0.9) form
-        has_contract_award = len(root.xpath('.//*[local-name()="CONTRACT_AWARD"]')) > 0
-        has_f03_2014 = len(root.xpath('.//*[local-name()="F03_2014"]')) > 0
-
-        return has_contract_award or has_f03_2014
-
-    except Exception as e:
-        logger.debug(f"Error checking if {xml_file.name} is TED 2.0 format: {e}")
-        return False
-
-
-def get_format_name() -> str:
-    """Return the format name for this parser."""
-    return FORMAT_NAME
-
-
 def parse_xml_file(xml_file: Path) -> Optional[List[TedAwardDataModel]]:
     """Parse TED 2.0 XML file and return structured data."""
     try:

@@ -3,10 +3,9 @@ Tests for eForms UBL ContractAwardNotice format parser (2025+).
 
 The eForms UBL format is the new EU standard for TED notices starting in 2025.
 These tests validate:
-1. Parser detection (can_parse)
-2. Document parsing (parse_xml_file)
-3. Data extraction (document, contracting body, contract, awards, contractors)
-4. Data validation using Pydantic models
+1. Document parsing (parse_xml_file)
+2. Data extraction (document, contracting body, contract, awards, contractors)
+3. Data validation using Pydantic models
 """
 
 import pytest
@@ -34,15 +33,6 @@ EFORMS_UBL_FIXTURES = [
 
 class TestEFormsUBLParser:
     """Tests for eForms UBL ContractAwardNotice format parser."""
-
-    @pytest.mark.parametrize("fixture_name", EFORMS_UBL_FIXTURES)
-    def test_can_parse_eforms_ubl_format(self, fixture_name):
-        """Test parser detection for eForms UBL format."""
-        fixture_file = FIXTURES_DIR / fixture_name
-        assert fixture_file.exists(), f"Fixture file not found: {fixture_file}"
-        assert eforms_ubl.can_parse(fixture_file), (
-            f"Parser should detect eForms UBL format for {fixture_name}"
-        )
 
     @pytest.mark.parametrize("fixture_name", EFORMS_UBL_FIXTURES)
     def test_parse_eforms_ubl_document(self, fixture_name):
@@ -102,10 +92,6 @@ class TestEFormsUBLParser:
                 assert contractor.official_name, (
                     f"Contractor name should be present in {fixture_name}"
                 )
-
-    def test_get_format_name(self):
-        """Test parser format name."""
-        assert eforms_ubl.get_format_name() == "eForms UBL ContractAwardNotice"
 
 
 if __name__ == "__main__":

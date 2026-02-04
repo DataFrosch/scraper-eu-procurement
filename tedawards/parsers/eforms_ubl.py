@@ -54,8 +54,6 @@ def _parse_date_eforms(text: Optional[str]) -> Optional[date]:
 
 logger = logging.getLogger(__name__)
 
-FORMAT_NAME = "eForms UBL ContractAwardNotice"
-
 # eForms namespaces
 NAMESPACES = {
     "can": "urn:oasis:names:specification:ubl:schema:xsd:ContractAwardNotice-2",
@@ -66,28 +64,6 @@ NAMESPACES = {
     "efext": "http://data.europa.eu/p27/eforms-ubl-extensions/1",
     "ext": "urn:oasis:names:specification:ubl:schema:xsd:CommonExtensionComponents-2",
 }
-
-
-def can_parse(xml_file: Path) -> bool:
-    """Check if this is an eForms UBL ContractAwardNotice format file."""
-    try:
-        with open(xml_file, "r", encoding="utf-8", errors="ignore") as f:
-            content = f.read(1000)
-        return (
-            "ContractAwardNotice" in content
-            and "urn:oasis:names:specification:ubl:schema:xsd:ContractAwardNotice-2"
-            in content
-        )
-    except Exception as e:
-        logger.debug(
-            f"Error reading file {xml_file.name} for eForms UBL detection: {e}"
-        )
-        return False
-
-
-def get_format_name() -> str:
-    """Return format name."""
-    return FORMAT_NAME
 
 
 def parse_xml_file(xml_file: Path) -> Optional[List[TedAwardDataModel]]:

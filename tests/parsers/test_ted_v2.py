@@ -7,10 +7,9 @@ The unified TED 2.0 parser handles multiple format variants:
 - R2.0.9 (2014-2024): XML with F03_2014 forms, modern structure
 
 These tests validate:
-1. Parser detection (can_parse)
-2. Document parsing (parse_xml_file)
-3. Data extraction (document, contracting body, contract, awards, contractors)
-4. Data validation using Pydantic models
+1. Document parsing (parse_xml_file)
+2. Data extraction (document, contracting body, contract, awards, contractors)
+3. Data validation using Pydantic models
 """
 
 import pytest
@@ -48,15 +47,6 @@ TED_V2_R209_FIXTURES = [
 
 class TestTedV2R207Parser:
     """Tests for TED 2.0 R2.0.7 format parser."""
-
-    @pytest.mark.parametrize("fixture_name", TED_V2_R207_FIXTURES)
-    def test_can_parse_r207_format(self, fixture_name):
-        """Test parser detection for R2.0.7 format."""
-        fixture_file = FIXTURES_DIR / fixture_name
-        assert fixture_file.exists(), f"Fixture file not found: {fixture_file}"
-        assert ted_v2.can_parse(fixture_file), (
-            f"Parser should detect R2.0.7 format for {fixture_name}"
-        )
 
     @pytest.mark.parametrize("fixture_name", TED_V2_R207_FIXTURES)
     def test_parse_r207_document(self, fixture_name):
@@ -128,15 +118,6 @@ class TestTedV2R208Parser:
     """Tests for TED 2.0 R2.0.8 format parser."""
 
     @pytest.mark.parametrize("fixture_name", TED_V2_R208_FIXTURES)
-    def test_can_parse_r208_format(self, fixture_name):
-        """Test parser detection for R2.0.8 format."""
-        fixture_file = FIXTURES_DIR / fixture_name
-        assert fixture_file.exists(), f"Fixture file not found: {fixture_file}"
-        assert ted_v2.can_parse(fixture_file), (
-            f"Parser should detect R2.0.8 format for {fixture_name}"
-        )
-
-    @pytest.mark.parametrize("fixture_name", TED_V2_R208_FIXTURES)
     def test_parse_r208_document(self, fixture_name):
         """Test parsing R2.0.8 format document."""
         fixture_file = FIXTURES_DIR / fixture_name
@@ -194,15 +175,6 @@ class TestTedV2R208Parser:
 
 class TestTedV2R209Parser:
     """Tests for TED 2.0 R2.0.9 format parser (F03_2014 forms)."""
-
-    @pytest.mark.parametrize("fixture_name", TED_V2_R209_FIXTURES)
-    def test_can_parse_r209_format(self, fixture_name):
-        """Test parser detection for R2.0.9 format."""
-        fixture_file = FIXTURES_DIR / fixture_name
-        assert fixture_file.exists(), f"Fixture file not found: {fixture_file}"
-        assert ted_v2.can_parse(fixture_file), (
-            f"Parser should detect R2.0.9 format for {fixture_name}"
-        )
 
     def test_parse_r209_document_detailed(self):
         """Test parsing R2.0.9 format document with detailed validation (2024 fixture only)."""
@@ -314,10 +286,6 @@ class TestTedV2R209Parser:
         )
         award = award_data.awards[0]
         assert isinstance(award, AwardModel)
-
-    def test_get_format_name(self):
-        """Test parser format name."""
-        assert ted_v2.get_format_name() == "TED 2.0"
 
 
 class TestDataValidation:

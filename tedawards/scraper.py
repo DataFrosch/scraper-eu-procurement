@@ -9,7 +9,7 @@ from dotenv import load_dotenv
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import sessionmaker, Session
 
-from .parsers import get_parser
+from .parsers import try_parse_award
 from .models import Base, TEDDocument, ContractingBody, Contract, Award, Contractor
 from .schema import TedAwardDataModel
 
@@ -127,27 +127,9 @@ def get_package_files(
 
 
 def process_file(file_path: Path) -> Optional[List[TedAwardDataModel]]:
-    """Process a single file (XML or ZIP) and return parser result."""
+    """Process a single XML file and return award data if it's an award notice."""
     try:
-        # Get appropriate parser module for this file
-        parser = get_parser(file_path)
-        if not parser:
-            logger.debug(f"No parser available for {file_path.name}")
-            return None
-
-        # Parse file - returns List[TedAwardDataModel]
-        result = parser.parse_xml_file(file_path)
-        if not result:
-            logger.debug(
-                f"Failed to parse {file_path.name} with {parser.get_format_name()}"
-            )
-            return None
-
-        logger.debug(
-            f"Parsed {file_path.name} using {parser.get_format_name()}, found {len(result)} award documents"
-        )
-        return result
-
+        return try_parse_award(file_path)
     except Exception as e:
         logger.error(f"Error processing {file_path}: {e}")
         raise

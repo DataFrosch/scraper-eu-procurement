@@ -232,44 +232,26 @@ class TestGetPackageFiles:
 class TestProcessFile:
     """Tests for process_file function."""
 
-    def test_process_file_with_valid_parser(self, temp_data_dir, sample_award_data):
-        """Test processing file with valid parser."""
+    def test_process_file_with_award(self, temp_data_dir, sample_award_data):
+        """Test processing file that contains an award."""
         xml_file = temp_data_dir / "test.xml"
         xml_file.write_text("<test/>")
 
-        # Mock parser
-        mock_parser = Mock()
-        mock_parser.parse_xml_file.return_value = [sample_award_data]
-        mock_parser.get_format_name.return_value = "Test Parser"
-
-        # Mock parser factory
-        with patch("tedawards.scraper.get_parser", return_value=mock_parser):
+        with patch(
+            "tedawards.scraper.try_parse_award", return_value=[sample_award_data]
+        ):
             result = process_file(xml_file)
 
             assert result is not None
             assert len(result) == 1
             assert result[0].document.doc_id == "12345-2024"
-            mock_parser.parse_xml_file.assert_called_once_with(xml_file)
 
-    def test_process_file_no_parser_available(self, temp_data_dir):
-        """Test processing file when no parser is available."""
+    def test_process_file_not_an_award(self, temp_data_dir):
+        """Test processing file that is not an award notice."""
         xml_file = temp_data_dir / "test.xml"
         xml_file.write_text("<test/>")
 
-        with patch("tedawards.scraper.get_parser", return_value=None):
-            result = process_file(xml_file)
-            assert result is None
-
-    def test_process_file_parser_returns_none(self, temp_data_dir):
-        """Test processing file when parser returns None."""
-        xml_file = temp_data_dir / "test.xml"
-        xml_file.write_text("<test/>")
-
-        mock_parser = Mock()
-        mock_parser.parse_xml_file.return_value = None
-        mock_parser.get_format_name.return_value = "Test Parser"
-
-        with patch("tedawards.scraper.get_parser", return_value=mock_parser):
+        with patch("tedawards.scraper.try_parse_award", return_value=None):
             result = process_file(xml_file)
             assert result is None
 
@@ -278,10 +260,9 @@ class TestProcessFile:
         xml_file = temp_data_dir / "test.xml"
         xml_file.write_text("<test/>")
 
-        mock_parser = Mock()
-        mock_parser.parse_xml_file.side_effect = ValueError("Invalid XML")
-
-        with patch("tedawards.scraper.get_parser", return_value=mock_parser):
+        with patch(
+            "tedawards.scraper.try_parse_award", side_effect=ValueError("Invalid XML")
+        ):
             with pytest.raises(ValueError, match="Invalid XML"):
                 process_file(xml_file)
 
