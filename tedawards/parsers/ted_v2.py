@@ -501,27 +501,34 @@ def _extract_awards_r207(root: etree._Element) -> List[AwardModel]:
         ".//{http://publications.europa.eu/TED_schema/Export}AWARD_OF_CONTRACT"
     )
 
+    ns = "{http://publications.europa.eu/TED_schema/Export}"
+
     for award_elem in award_elems:
-        contract_number_elem = award_elem.find(
-            ".//{http://publications.europa.eu/TED_schema/Export}CONTRACT_NUMBER"
-        )
-        title_elem = award_elem.find(
-            ".//{http://publications.europa.eu/TED_schema/Export}CONTRACT_TITLE"
-        )
+        # Skip empty AWARD_OF_CONTRACT placeholder elements.
+        # In R2.0.7/R2.0.8, non-awarded lots appear as empty elements
+        # or with only boilerplate (e.g. MORE_INFORMATION_TO_SUB_CONTRACTED).
+        if (
+            award_elem.find(f".//{ns}ECONOMIC_OPERATOR_NAME_ADDRESS") is None
+            and award_elem.find(f".//{ns}CONTRACT_VALUE_INFORMATION") is None
+            and award_elem.find(f".//{ns}CONTRACT_NUMBER") is None
+            and award_elem.find(f".//{ns}CONTRACT_AWARD_DATE") is None
+        ):
+            continue
+
+        contract_number_elem = award_elem.find(f".//{ns}CONTRACT_NUMBER")
+        title_elem = award_elem.find(f".//{ns}CONTRACT_TITLE")
 
         value_elem = award_elem.find(
-            ".//{http://publications.europa.eu/TED_schema/Export}CONTRACT_VALUE_INFORMATION"
-            "//{http://publications.europa.eu/TED_schema/Export}COSTS_RANGE_AND_CURRENCY_WITH_VAT_RATE"
-            "//{http://publications.europa.eu/TED_schema/Export}VALUE_COST"
+            f".//{ns}CONTRACT_VALUE_INFORMATION"
+            f"//{ns}COSTS_RANGE_AND_CURRENCY_WITH_VAT_RATE"
+            f"//{ns}VALUE_COST"
         )
         currency_elem = award_elem.find(
-            ".//{http://publications.europa.eu/TED_schema/Export}CONTRACT_VALUE_INFORMATION"
-            "//{http://publications.europa.eu/TED_schema/Export}COSTS_RANGE_AND_CURRENCY_WITH_VAT_RATE"
+            f".//{ns}CONTRACT_VALUE_INFORMATION"
+            f"//{ns}COSTS_RANGE_AND_CURRENCY_WITH_VAT_RATE"
         )
 
-        offers_elem = award_elem.find(
-            ".//{http://publications.europa.eu/TED_schema/Export}OFFERS_RECEIVED_NUMBER"
-        )
+        offers_elem = award_elem.find(f".//{ns}OFFERS_RECEIVED_NUMBER")
 
         contractors = _extract_contractors_r207(award_elem)
 
