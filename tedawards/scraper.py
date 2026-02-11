@@ -126,63 +126,42 @@ def get_package_files(
     return files if files else None
 
 
-def process_file(file_path: Path) -> Optional[List[TedAwardDataModel]]:
-    """Process a single XML file and return award data if it's an award notice."""
-    try:
-        return try_parse_award(file_path)
-    except Exception as e:
-        logger.error(f"Error processing {file_path}: {e}")
-        raise
+def save_document(award_data: TedAwardDataModel) -> bool:
+    """Save a single award document to database in its own transaction.
 
-
-def save_awards(session: Session, awards: List[TedAwardDataModel]) -> int:
-    """Save award data to database.
-
-    Skips documents that already exist (idempotent imports).
+    Returns True if saved, False if already exists.
     """
-    count = 0
+    doc_id = award_data.document.doc_id
 
-    for award_data in awards:
-        doc_id = award_data.document.doc_id
-
-        # Skip if document already imported
+    with get_session() as session:
         existing = session.execute(
             select(TEDDocument.doc_id).where(TEDDocument.doc_id == doc_id)
         ).scalar_one_or_none()
         if existing:
             logger.debug(f"Document {doc_id} already imported, skipping")
-            continue
+            return False
 
-        try:
-            # Create object graph using relationships
-            doc = TEDDocument(**award_data.document.model_dump())
+        doc = TEDDocument(**award_data.document.model_dump())
 
-            cb = ContractingBody(**award_data.contracting_body.model_dump())
-            doc.contracting_bodies.append(cb)
+        cb = ContractingBody(**award_data.contracting_body.model_dump())
+        doc.contracting_bodies.append(cb)
 
-            contract = Contract(**award_data.contract.model_dump())
-            contract.document = doc
-            contract.contracting_body = cb
+        contract = Contract(**award_data.contract.model_dump())
+        contract.document = doc
+        contract.contracting_body = cb
 
-            for award_item in award_data.awards:
-                award_dict = award_item.model_dump()
-                contractors_data = award_dict.pop("contractors", [])
+        for award_item in award_data.awards:
+            award_dict = award_item.model_dump()
+            contractors_data = award_dict.pop("contractors", [])
 
-                award = Award(**award_dict)
-                contract.awards.append(award)
+            award = Award(**award_dict)
+            contract.awards.append(award)
 
-                for contractor_data in contractors_data:
-                    award.contractors.append(Contractor(**contractor_data))
+            for contractor_data in contractors_data:
+                award.contractors.append(Contractor(**contractor_data))
 
-            session.add(doc)
-            count += 1
-
-        except Exception as e:
-            logger.error(f"Error saving award {doc_id}: {e}")
-            raise
-
-    session.flush()
-    return count
+        session.add(doc)
+        return True
 
 
 def download_year(year: int, max_issue: int = 300, data_dir: Path = DATA_DIR):
@@ -249,6 +228,9 @@ def get_downloaded_packages(year: int, data_dir: Path = DATA_DIR) -> List[int]:
 def import_package(package_number: int, data_dir: Path = DATA_DIR) -> int:
     """Import awards from a single downloaded package.
 
+    Each document is saved in its own transaction, so successfully imported
+    documents are preserved even if a later document fails.
+
     Args:
         package_number: TED package number (yyyynnnnn format)
         data_dir: Directory where packages are stored
@@ -261,37 +243,20 @@ def import_package(package_number: int, data_dir: Path = DATA_DIR) -> int:
         logger.warning(f"Package {package_number:09d} not found in {data_dir}")
         return 0
 
-    # Filter to processable files
-    processable_files = [
-        f
-        for f in files
-        if (
-            # TED META XML: en_*_meta_org.zip or EN_*_META_ORG.ZIP
-            f.name.lower().startswith("en_") and "_meta_org." in f.name.lower()
-        )
-        or (
-            # TED INTERNAL_OJS: *.en files
-            f.suffix.lower() == ".en"
-        )
-        or (
-            # TED 2.0 and eForms: one file per document in original language (*.xml)
-            f.suffix.lower() == ".xml"
-        )
-    ]
+    xml_files = [f for f in files if f.suffix.lower() == ".xml"]
 
-    all_awards = []
-    for file_path in processable_files:
-        awards = process_file(file_path)
-        if awards:
-            all_awards.extend(awards)
+    count = 0
+    for file_path in xml_files:
+        awards = try_parse_award(file_path)
+        if not awards:
+            continue
+        for award_data in awards:
+            if save_document(award_data):
+                count += 1
 
-    if not all_awards:
-        return 0
-
-    with get_session() as session:
-        saved = save_awards(session, all_awards)
-        logger.info(f"Package {package_number:09d}: Imported {saved} award notices")
-        return saved
+    if count:
+        logger.info(f"Package {package_number:09d}: Imported {count} award notices")
+    return count
 
 
 def import_year(year: int, data_dir: Path = DATA_DIR):

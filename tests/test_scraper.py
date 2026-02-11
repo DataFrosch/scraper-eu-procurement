@@ -16,8 +16,7 @@ from sqlalchemy.orm import sessionmaker
 from tedawards.scraper import (
     download_package,
     get_package_files,
-    process_file,
-    save_awards,
+    save_document,
     get_session,
     get_downloaded_packages,
     get_package_number,
@@ -229,87 +228,40 @@ class TestGetPackageFiles:
         assert zip_file in files
 
 
-class TestProcessFile:
-    """Tests for process_file function."""
-
-    def test_process_file_with_award(self, temp_data_dir, sample_award_data):
-        """Test processing file that contains an award."""
-        xml_file = temp_data_dir / "test.xml"
-        xml_file.write_text("<test/>")
-
-        with patch(
-            "tedawards.scraper.try_parse_award", return_value=[sample_award_data]
-        ):
-            result = process_file(xml_file)
-
-            assert result is not None
-            assert len(result) == 1
-            assert result[0].document.doc_id == "12345-2024"
-
-    def test_process_file_not_an_award(self, temp_data_dir):
-        """Test processing file that is not an award notice."""
-        xml_file = temp_data_dir / "test.xml"
-        xml_file.write_text("<test/>")
-
-        with patch("tedawards.scraper.try_parse_award", return_value=None):
-            result = process_file(xml_file)
-            assert result is None
-
-    def test_process_file_parser_raises_exception(self, temp_data_dir):
-        """Test that parser exceptions are propagated."""
-        xml_file = temp_data_dir / "test.xml"
-        xml_file.write_text("<test/>")
-
-        with patch(
-            "tedawards.scraper.try_parse_award", side_effect=ValueError("Invalid XML")
-        ):
-            with pytest.raises(ValueError, match="Invalid XML"):
-                process_file(xml_file)
-
-
-class TestSaveAwards:
-    """Tests for save_awards function."""
+class TestSaveDocument:
+    """Tests for save_document function."""
 
     def test_save_single_award(self, test_db, sample_award_data):
         """Test saving a single award to database."""
         from tedawards.scraper import SessionLocal
 
+        assert save_document(sample_award_data) is True
+
         session = SessionLocal()
         try:
-            count = save_awards(session, [sample_award_data])
-            session.commit()
-
-            assert count == 1
-
-            # Verify document was saved
             doc = session.execute(
                 select(TEDDocument).where(TEDDocument.doc_id == "12345-2024")
             ).scalar_one()
             assert doc.edition == "2024/S 001-000001"
 
-            # Verify contracting body was saved with document FK
             cb = session.execute(
                 select(ContractingBody).where(
                     ContractingBody.official_name == "Test Contracting Body"
                 )
             ).scalar_one()
-            assert cb.official_name == "Test Contracting Body"
             assert cb.ted_doc_id == "12345-2024"
 
-            # Verify contract was saved
             contract = session.execute(
                 select(Contract).where(Contract.ted_doc_id == "12345-2024")
             ).scalar_one()
             assert contract.title == "Test Contract"
 
-            # Verify award was saved
             award = session.execute(
                 select(Award).where(Award.contract_id == contract.id)
             ).scalar_one()
             assert award.awarded_value == Decimal("50000.00")
             assert award.tenders_received == 5
 
-            # Verify contractor was saved with award FK
             contractor = session.execute(
                 select(Contractor).where(
                     Contractor.official_name == "Test Contractor GmbH"
@@ -317,7 +269,6 @@ class TestSaveAwards:
             ).scalar_one()
             assert contractor.country_code == "DE"
             assert contractor.award_id == award.id
-
         finally:
             session.close()
 
@@ -325,32 +276,22 @@ class TestSaveAwards:
         """Test that duplicate documents are skipped (idempotent import)."""
         from tedawards.scraper import SessionLocal
 
+        assert save_document(sample_award_data) is True
+        assert save_document(sample_award_data) is False
+
         session = SessionLocal()
         try:
-            # Save first time
-            count1 = save_awards(session, [sample_award_data])
-            session.commit()
-            assert count1 == 1
-
-            # Save again with same doc_id - should be skipped
-            count2 = save_awards(session, [sample_award_data])
-            session.commit()
-            assert count2 == 0  # Skipped because doc already exists
-
-            # Verify only one document exists
             docs = session.execute(
                 select(TEDDocument).where(TEDDocument.doc_id == "12345-2024")
             ).all()
             assert len(docs) == 1
-
         finally:
             session.close()
 
-    def test_save_same_contractor_in_different_awards(self, test_db):
+    def test_save_same_contractor_in_different_documents(self, test_db):
         """Test that same contractor in different documents creates separate records (raw data)."""
         from tedawards.scraper import SessionLocal
 
-        # Create two awards with same contractor name
         award_data_1 = TedAwardDataModel(
             document=DocumentModel(
                 doc_id="12345-2024",
@@ -395,19 +336,17 @@ class TestSaveAwards:
             ],
         )
 
+        save_document(award_data_1)
+        save_document(award_data_2)
+
         session = SessionLocal()
         try:
-            save_awards(session, [award_data_1, award_data_2])
-            session.commit()
-
-            # Raw data model: each occurrence is stored separately
             contractors = session.execute(
                 select(Contractor).where(
                     Contractor.official_name == "Shared Contractor Ltd"
                 )
             ).all()
             assert len(contractors) == 2  # One per award (raw source data)
-
         finally:
             session.close()
 
@@ -448,20 +387,15 @@ class TestSaveAwards:
             ],
         )
 
+        assert save_document(award_data) is True
+
         session = SessionLocal()
         try:
-            count = save_awards(session, [award_data])
-            session.commit()
-            assert count == 1
-
-            # Verify both awards were saved
             awards = session.execute(select(Award)).all()
             assert len(awards) == 2
 
-            # Verify different contractors
             contractors = session.execute(select(Contractor)).all()
             assert len(contractors) == 2
-
         finally:
             session.close()
 
@@ -469,44 +403,16 @@ class TestSaveAwards:
         """Test that re-importing the same data is idempotent (skips existing docs)."""
         from tedawards.scraper import SessionLocal
 
+        assert save_document(sample_award_data) is True
+        assert save_document(sample_award_data) is False
+
         session = SessionLocal()
         try:
-            # First import
-            count1 = save_awards(session, [sample_award_data])
-            session.commit()
-            assert count1 == 1
-
-            # Count records after first import
-            doc_count_1 = len(session.execute(select(TEDDocument)).all())
-            cb_count_1 = len(session.execute(select(ContractingBody)).all())
-            contract_count_1 = len(session.execute(select(Contract)).all())
-            award_count_1 = len(session.execute(select(Award)).all())
-            contractor_count_1 = len(session.execute(select(Contractor)).all())
-
-            assert doc_count_1 == 1
-            assert cb_count_1 == 1
-            assert contract_count_1 == 1
-            assert award_count_1 == 1
-            assert contractor_count_1 == 1
-
-            # Second import (re-import same data) - should skip
-            count2 = save_awards(session, [sample_award_data])
-            session.commit()
-            assert count2 == 0  # Skipped because doc already exists
-
-            # Count records after second import - should be identical
-            doc_count_2 = len(session.execute(select(TEDDocument)).all())
-            cb_count_2 = len(session.execute(select(ContractingBody)).all())
-            contract_count_2 = len(session.execute(select(Contract)).all())
-            award_count_2 = len(session.execute(select(Award)).all())
-            contractor_count_2 = len(session.execute(select(Contractor)).all())
-
-            assert doc_count_2 == 1, "Re-import created duplicate documents"
-            assert cb_count_2 == 1, "Re-import created duplicate contracting bodies"
-            assert contract_count_2 == 1, "Re-import created duplicate contracts"
-            assert award_count_2 == 1, "Re-import created duplicate awards"
-            assert contractor_count_2 == 1, "Re-import created duplicate contractors"
-
+            assert len(session.execute(select(TEDDocument)).all()) == 1
+            assert len(session.execute(select(ContractingBody)).all()) == 1
+            assert len(session.execute(select(Contract)).all()) == 1
+            assert len(session.execute(select(Award)).all()) == 1
+            assert len(session.execute(select(Contractor)).all()) == 1
         finally:
             session.close()
 
@@ -514,7 +420,6 @@ class TestSaveAwards:
         """Test that each document has its own contracting body record (raw data model)."""
         from tedawards.scraper import SessionLocal
 
-        # Create two documents with the same contracting body info
         award_data_1 = TedAwardDataModel(
             document=DocumentModel(
                 doc_id="12345-2024",
@@ -545,23 +450,16 @@ class TestSaveAwards:
             awards=[AwardModel(contractors=[])],
         )
 
+        save_document(award_data_1)
+        save_document(award_data_2)
+
         session = SessionLocal()
         try:
-            # Save both awards
-            save_awards(session, [award_data_1, award_data_2])
-            session.commit()
+            assert len(session.execute(select(TEDDocument)).all()) == 2
 
-            # Verify two documents exist
-            docs = session.execute(select(TEDDocument)).all()
-            assert len(docs) == 2
-
-            # Raw data model: each document has its own contracting body record
             cbs = session.execute(select(ContractingBody)).all()
-            assert len(cbs) == 2, (
-                "Each document should have its own contracting body record"
-            )
+            assert len(cbs) == 2
 
-            # Verify each contracting body is linked to its document
             cb1 = session.execute(
                 select(ContractingBody).where(
                     ContractingBody.ted_doc_id == "12345-2024"
@@ -575,39 +473,7 @@ class TestSaveAwards:
             assert cb1.official_name == "Ministry of Health"
             assert cb2.official_name == "Ministry of Health"
 
-            # Verify two contracts exist
-            contracts = session.execute(select(Contract)).all()
-            assert len(contracts) == 2
-
-        finally:
-            session.close()
-
-    def test_save_award_validation_error_propagates(self, test_db):
-        """Test that validation errors are propagated."""
-        from tedawards.scraper import SessionLocal
-        from unittest.mock import patch
-
-        # Create valid award data but force an exception during save
-        valid_data = TedAwardDataModel(
-            document=DocumentModel(
-                doc_id="12345-2024",
-                edition="2024/S 001-000001",
-                publication_date=date(2024, 1, 1),
-                source_country="DE",
-            ),
-            contracting_body=ContractingBodyModel(official_name="Test Body"),
-            contract=ContractModel(title="Test Contract"),
-            awards=[AwardModel()],
-        )
-
-        session = SessionLocal()
-        try:
-            # Mock session.execute to raise an exception
-            with patch.object(
-                session, "execute", side_effect=Exception("Database error")
-            ):
-                with pytest.raises(Exception, match="Database error"):
-                    save_awards(session, [valid_data])
+            assert len(session.execute(select(Contract)).all()) == 2
         finally:
             session.close()
 
