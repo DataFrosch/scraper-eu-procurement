@@ -247,8 +247,8 @@ def save_document(award_data: TedAwardDataModel) -> bool:
             session.add(award)
             session.flush()
 
-            for contractor_data in contractors_data:
-                contractor_id = _upsert_contractor(session, contractor_data)
+            contractor_ids = {_upsert_contractor(session, c) for c in contractors_data}
+            for contractor_id in contractor_ids:
                 session.execute(
                     award_contractors.insert().values(
                         award_id=award.id, contractor_id=contractor_id
