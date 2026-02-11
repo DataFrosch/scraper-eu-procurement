@@ -278,6 +278,7 @@ def _extract_contracting_body_r207(
         town=elem_text(town_elem),
         postal_code=elem_text(postal_code_elem),
         country_code=elem_attr(country_elem, "VALUE"),
+        nuts_code=None,
         contact_point=None,
         phone=elem_text(phone_elem),
         email=elem_text(email_elem),
@@ -313,12 +314,20 @@ def _extract_contracting_body_r209(
     authority_type_elems = ca_elem.xpath('.//*[local-name()="CA_TYPE"]')
     activity_elems = ca_elem.xpath('.//*[local-name()="CA_ACTIVITY"]')
 
+    # NUTS code from ADDRESS_CONTRACTING_BODY
+    addr_cb_elems = ca_elem.xpath('.//*[local-name()="ADDRESS_CONTRACTING_BODY"]')
+    nuts_code = None
+    if addr_cb_elems:
+        nuts_elems = addr_cb_elems[0].xpath('.//*[local-name()="NUTS"]')
+        nuts_code = nuts_elems[0].get("CODE") if nuts_elems else None
+
     return ContractingBodyModel(
         official_name=first_text(name_elems) or "",
         address=first_text(address_elems),
         town=first_text(town_elems),
         postal_code=first_text(postal_code_elems),
         country_code=first_attr(country_elems, "VALUE"),
+        nuts_code=nuts_code,
         contact_point=first_text(contact_elems),
         phone=first_text(phone_elems),
         email=first_text(email_elems),
@@ -360,10 +369,22 @@ def _extract_contract_info_r207(root: etree._Element) -> Optional[ContractModel]
         ".//{http://publications.europa.eu/TED_schema/Export}PR_PROC"
     )
 
+    # Performance location NUTS
+    location_nuts_elem = root.find(
+        ".//{http://publications.europa.eu/TED_schema/Export}LOCATION_NUTS"
+        "//{http://publications.europa.eu/TED_schema/Export}NUTS"
+    )
+    nuts_code = (
+        elem_attr(location_nuts_elem, "CODE")
+        if location_nuts_elem is not None
+        else None
+    )
+
     return ContractModel(
         title=element_text(title_elem) or "",
         short_description=element_text(description_elem),
         main_cpv_code=elem_attr(cpv_main_elem, "CODE"),
+        nuts_code=nuts_code,
         contract_nature_code=elem_attr(nature_elem, "CODE"),
         procedure_type_code=elem_attr(procedure_elem, "CODE"),
     )
@@ -386,12 +407,19 @@ def _extract_contract_info_r209(root: etree._Element) -> Optional[ContractModel]
     )
     type_contract_elems = object_elem.xpath('.//*[local-name()="TYPE_CONTRACT"]')
 
+    # Performance location NUTS from OBJECT_DESCR
+    nuts_elems = object_elem.xpath(
+        './/*[local-name()="OBJECT_DESCR"]//*[local-name()="NUTS"]'
+    )
+    nuts_code = nuts_elems[0].get("CODE") if nuts_elems else None
+
     return ContractModel(
         title=element_text(title_elems[0]) if title_elems else "",
         short_description=(
             element_text(description_elems[0]) if description_elems else None
         ),
         main_cpv_code=cpv_main_elems[0].get("CODE") if cpv_main_elems else None,
+        nuts_code=nuts_code,
         contract_nature_code=(
             type_contract_elems[0].get("CTYPE") if type_contract_elems else None
         ),
@@ -550,6 +578,7 @@ def _extract_contractors_r207(award_elem: etree._Element) -> List[ContractorMode
                 town=elem_text(town_elem),
                 postal_code=elem_text(postal_code_elem),
                 country_code=elem_attr(country_elem, "VALUE"),
+                nuts_code=None,
             )
         )
 
@@ -568,6 +597,7 @@ def _extract_contractors_r209(award_elem: etree._Element) -> List[ContractorMode
         town_elems = contractor_elem.xpath('.//*[local-name()="TOWN"]')
         postal_code_elems = contractor_elem.xpath('.//*[local-name()="POSTAL_CODE"]')
         country_elems = contractor_elem.xpath('.//*[local-name()="COUNTRY"]')
+        nuts_elems = contractor_elem.xpath('.//*[local-name()="NUTS"]')
 
         contractors.append(
             ContractorModel(
@@ -576,6 +606,7 @@ def _extract_contractors_r209(award_elem: etree._Element) -> List[ContractorMode
                 town=first_text(town_elems),
                 postal_code=first_text(postal_code_elems),
                 country_code=first_attr(country_elems, "VALUE"),
+                nuts_code=nuts_elems[0].get("CODE") if nuts_elems else None,
             )
         )
 

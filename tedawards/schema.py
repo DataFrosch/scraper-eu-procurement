@@ -31,6 +31,7 @@ class ContractingBodyModel(BaseModel):
     town: Optional[str] = Field(None, description="Town/city")
     postal_code: Optional[str] = Field(None, description="Postal code")
     country_code: Optional[str] = Field(None, description="Country code")
+    nuts_code: Optional[str] = Field(None, description="NUTS region code")
     contact_point: Optional[str] = Field(None, description="Contact point")
     phone: Optional[str] = Field(None, description="Phone number")
     email: Optional[str] = Field(None, description="Email address")
@@ -46,6 +47,9 @@ class ContractModel(BaseModel):
     title: str = Field(..., description="Contract title")
     short_description: Optional[str] = Field(None, description="Short description")
     main_cpv_code: Optional[str] = Field(None, description="Main CPV code")
+    nuts_code: Optional[str] = Field(
+        None, description="NUTS code for performance location"
+    )
     contract_nature_code: Optional[str] = Field(
         None, description="Contract nature code"
     )
@@ -60,6 +64,7 @@ class ContractorModel(BaseModel):
     town: Optional[str] = Field(None, description="Town/city")
     postal_code: Optional[str] = Field(None, description="Postal code")
     country_code: Optional[str] = Field(None, description="Country code")
+    nuts_code: Optional[str] = Field(None, description="NUTS region code")
 
 
 class AwardModel(BaseModel):

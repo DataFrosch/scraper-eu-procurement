@@ -70,6 +70,7 @@ class ContractingBody(Base):
     town: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     postal_code: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     country_code: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    nuts_code: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     phone: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     email: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     url_general: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
@@ -89,6 +90,7 @@ class ContractingBody(Base):
             "town",
             "postal_code",
             "country_code",
+            "nuts_code",
             "contact_point",
             "phone",
             "email",
@@ -100,6 +102,7 @@ class ContractingBody(Base):
             postgresql_nulls_not_distinct=True,
         ),
         Index("idx_contracting_body_country", "country_code"),
+        Index("idx_contracting_body_nuts", "nuts_code"),
     )
 
 
@@ -150,6 +153,7 @@ class Contract(Base):
     short_description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     main_cpv_code: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     contract_nature_code: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    nuts_code: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     procedure_type_code: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     # Relationships
     document: Mapped["TEDDocument"] = relationship(
@@ -162,6 +166,7 @@ class Contract(Base):
     __table_args__ = (
         Index("idx_contract_document", "ted_doc_id"),
         Index("idx_contracts_cpv", "main_cpv_code"),
+        Index("idx_contracts_nuts", "nuts_code"),
     )
 
 
@@ -201,6 +206,7 @@ class Contractor(Base):
     town: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     postal_code: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     country_code: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    nuts_code: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     # Relationships
     awards: Mapped[List["Award"]] = relationship(
         "Award", secondary=award_contractors, back_populates="contractors"
@@ -213,8 +219,10 @@ class Contractor(Base):
             "town",
             "postal_code",
             "country_code",
+            "nuts_code",
             name="uq_contractor_identity",
             postgresql_nulls_not_distinct=True,
         ),
         Index("idx_contractors_country", "country_code"),
+        Index("idx_contractors_nuts", "nuts_code"),
     )

@@ -79,11 +79,15 @@ def sample_award_data():
             source_country="DE",
         ),
         contracting_body=ContractingBodyModel(
-            official_name="Test Contracting Body", town="Berlin", country_code="DE"
+            official_name="Test Contracting Body",
+            town="Berlin",
+            country_code="DE",
+            nuts_code="DE300",
         ),
         contract=ContractModel(
             title="Test Contract",
             main_cpv_code="45000000",
+            nuts_code="DE212",
         ),
         awards=[
             AwardModel(
@@ -96,6 +100,7 @@ def sample_award_data():
                         official_name="Test Contractor GmbH",
                         town="Munich",
                         country_code="DE",
+                        nuts_code="DE212",
                     )
                 ],
             )
@@ -256,11 +261,13 @@ class TestSaveDocument:
                 )
             ).scalar_one()
             assert doc.contracting_body_id == cb.id
+            assert cb.nuts_code == "DE300"
 
             contract = session.execute(
                 select(Contract).where(Contract.ted_doc_id == "12345-2024")
             ).scalar_one()
             assert contract.title == "Test Contract"
+            assert contract.nuts_code == "DE212"
 
             award = session.execute(
                 select(Award).where(Award.contract_id == contract.id)
@@ -274,6 +281,7 @@ class TestSaveDocument:
                 )
             ).scalar_one()
             assert contractor.country_code == "DE"
+            assert contractor.nuts_code == "DE212"
 
             # Verify junction table link
             link = session.execute(

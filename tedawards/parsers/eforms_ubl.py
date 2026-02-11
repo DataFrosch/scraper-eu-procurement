@@ -219,6 +219,9 @@ def _extract_contracting_body(root: etree._Element) -> Optional[ContractingBodyM
         ".//cac:Contact/cbc:ElectronicMail", namespaces=NAMESPACES
     )
     url_elem = contracting_body.xpath(".//cbc:WebsiteURI", namespaces=NAMESPACES)
+    nuts_elem = contracting_body.xpath(
+        ".//cac:PostalAddress/cbc:CountrySubentityCode", namespaces=NAMESPACES
+    )
 
     return ContractingBodyModel(
         official_name=first_text(name_elem) or "",
@@ -226,6 +229,7 @@ def _extract_contracting_body(root: etree._Element) -> Optional[ContractingBodyM
         town=first_text(town_elem),
         postal_code=first_text(postal_elem),
         country_code=first_text(country_elem),
+        nuts_code=first_text(nuts_elem),
         contact_point=None,
         phone=first_text(phone_elem),
         email=first_text(email_elem),
@@ -252,10 +256,20 @@ def _extract_contract_info(root: etree._Element) -> Optional[ContractModel]:
         ".//cac:TenderingProcess/cbc:ProcedureCode", namespaces=NAMESPACES
     )
 
+    # Performance location NUTS - try lot-level first, then main project level
+    nuts_elem = root.xpath(
+        ".//cac:ProcurementProjectLot//cac:RealizedLocation//cbc:CountrySubentityCode",
+        namespaces=NAMESPACES,
+    ) or root.xpath(
+        ".//cac:ProcurementProject/cac:RealizedLocation//cbc:CountrySubentityCode",
+        namespaces=NAMESPACES,
+    )
+
     return ContractModel(
         title=title,
         short_description=title,
         main_cpv_code=first_text(cpv_elem),
+        nuts_code=first_text(nuts_elem),
         contract_nature_code=first_text(nature_elem),
         procedure_type_code=first_text(proc_elem),
     )
@@ -354,6 +368,10 @@ def _extract_contractors(root: etree._Element) -> List[ContractorModel]:
                         ".//cac:PostalAddress/cac:Country/cbc:IdentificationCode",
                         namespaces=NAMESPACES,
                     )
+                    nuts_elem = company.xpath(
+                        ".//cac:PostalAddress/cbc:CountrySubentityCode",
+                        namespaces=NAMESPACES,
+                    )
 
                     contractors.append(
                         ContractorModel(
@@ -362,6 +380,7 @@ def _extract_contractors(root: etree._Element) -> List[ContractorModel]:
                             town=first_text(town_elem),
                             postal_code=first_text(postal_elem),
                             country_code=first_text(country_elem),
+                            nuts_code=first_text(nuts_elem),
                         )
                     )
 
