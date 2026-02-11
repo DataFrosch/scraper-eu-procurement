@@ -215,7 +215,7 @@ class Award(Base):
     award_title: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     tenders_received: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     awarded_value: Mapped[Optional[Decimal]] = mapped_column(
-        Numeric(15, 2), nullable=True
+        Numeric(24, 2), nullable=True
     )
     awarded_value_currency: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     # Relationships
