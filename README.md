@@ -1,108 +1,66 @@
 # TED Awards Scraper
 
-A Python scraper for EU procurement contract award notices from [TED Europa](https://ted.europa.eu/). Processes XML-formatted TED data from **2011 onwards**.
-
-## Features
-
-- Scrapes TED award notice packages by year from **January 2011 onwards** (document type 7 only)
-- Supports multiple XML formats:
-  - TED 2.0 R2.0.7-R2.0.9 (2011-2024) - Standard TED XML formats
-  - eForms UBL (2025+) - New EU eForms standard
-- SQLite database with comprehensive procurement schema (PostgreSQL also supported)
-- Processes TED packages by Official Journal issue number (not calendar dates)
-- Smart stopping logic: automatically detects end of year (stops after 10 consecutive 404s)
-- Automatic schema creation and reference data management
-- Handles duplicate data gracefully with database-level deduplication
+A Python scraper for EU procurement contract award notices from [TED Europa](https://ted.europa.eu/). Extracts contract award notices (document type 7) from XML-formatted TED data, covering **January 2011 to present**.
 
 ## Quick Start
 
-1. **Setup environment**:
-   ```bash
-   # Install dependencies
-   uv sync
-   ```
+```bash
+# Install dependencies
+uv sync
 
-2. **Download data**:
-   ```bash
-   # Download packages for a year (skips already downloaded)
-   uv run tedawards download --year 2024
+# Start PostgreSQL database
+docker compose up -d
 
-   # Download multiple years
-   uv run tedawards download --start-year 2011 --end-year 2024
-   ```
+# Download packages for a year (skips already downloaded)
+uv run tedawards download --start-year 2024
 
-3. **Import to database**:
-   ```bash
-   # Import downloaded packages for a year
-   uv run tedawards import --year 2024
+# Import into database
+uv run tedawards import --start-year 2024
+```
 
-   # Import multiple years
-   uv run tedawards import --start-year 2011 --end-year 2024
-   ```
+Both commands accept `--start-year` and `--end-year` for processing year ranges.
 
-4. **Query data**:
-   ```bash
-   # SQLite database is created at ./tedawards.db by default
-   sqlite3 tedawards.db
-   ```
+### Configuration
 
-## Database Dump & Restore
+Environment variables (set in `.env`):
+
+| Variable | Default | Description |
+|---|---|---|
+| `DATABASE_URL` | `postgresql://tedawards:tedawards@localhost:5432/tedawards` | PostgreSQL connection string |
+| `TED_DATA_DIR` | `./data` | Directory for downloaded packages |
+| `LOG_LEVEL` | `INFO` | Logging level |
+
+## Database
+
+PostgreSQL 18 via Docker Compose, managed with SQLAlchemy ORM.
+
+### Schema
+
+- `ted_documents` — Award notice metadata
+- `contracting_bodies` — Buyer organizations (deduplicated lookup table)
+- `contracts` — Procurement contracts
+- `cpv_codes` / `contract_cpv_codes` — CPV classification codes and junction table
+- `awards` — Award decisions, values, and tender counts
+- `contractors` — Winning companies (deduplicated lookup table)
+- `award_contractors` — Award-contractor junction table
+
+### Dump & Restore
 
 ```bash
-# Dump the database (saves to dumps/ with timestamp)
 make dump
-
-# Restore from a dump file
 make restore FILE=dumps/tedawards_20260211_120000.dump
 ```
 
-## Configuration
+## Data Methodology
 
-Set environment variables in `.env`:
-```env
-DB_PATH=./tedawards.db          # SQLite database path (default: ./tedawards.db)
-TED_DATA_DIR=./data              # Directory for downloaded packages (default: ./data)
-LOG_LEVEL=INFO                   # Logging level (default: INFO)
-```
-
-## Database Schema
-
-Key tables:
-- `ted_documents` - Award notice metadata
-- `contracting_bodies` - Organizations issuing contracts
-- `contracts` - Procurement contracts
-- `awards` - Award decisions and statistics
-- `contractors` - Winning companies
-- `award_contractors` - Award-contractor relationships
+- **Entity deduplication**: Contractors and contracting bodies use shared lookup tables with exact-match deduplication (all fields must match). No fuzzy matching — further entity resolution belongs in a separate analysis layer.
+- **Monetary values**: Parsed as-is with no size caps. TED contains nonsensical placeholder values (e.g. strings of 9s) — outlier filtering is left to the analysis stage.
+- **Language**: All documents processed regardless of language. Names and titles stored in the original submission language.
 
 ## Architecture
 
-- **Parsers**: Automatically detects and processes multiple XML formats
-  - `TedV2Parser` - TED 2.0 R2.0.7/R2.0.8/R2.0.9 formats (2011-2024)
-  - `EFormsUBLParser` - eForms UBL ContractAwardNotice (2025+)
-- **Database**: SQLite with comprehensive procurement schema (PostgreSQL also supported)
-- **Scraper**: Downloads and processes TED packages by Official Journal issue number (sequential, not calendar-based)
-- **CLI**: Separate commands for downloading and importing data
-
-## Package Numbering
-
-TED packages use **Official Journal (OJ S) issue numbers**, not calendar dates:
-- Format: `{year}{issue_number:05d}` (e.g., `201100001` = issue 1 of 2011)
-- Issues are sequential but skip weekends/holidays
-- Typical year has ~250 issues (not 365 days)
-- Scraper automatically handles gaps by stopping after 10 consecutive 404s
-
-## Methodology
-
-- **Raw data**: No deduplication or normalization at import time. Each document produces its own records.
-- **Monetary values**: Parsed as-is with no size caps. TED data contains nonsensical placeholder values (e.g. strings of 9s) — filtering outliers is left to the analysis stage.
-- **Language**: All documents processed regardless of language. Names and titles stored in the original submission language.
-
-## Data Coverage
-
-- **Time Range**: January 2011 to present (14+ years of XML-formatted data)
-- **Data Quality**:
-  - All key procurement data extracted accurately
-  - Handles multiple XML formats and variations
-  - Consistent processing across different archive dates
-- **Format Support**: TED 2.0 (R2.0.7-R2.0.9) and eForms UBL
+- **Parsers** — Format auto-detection via `ParserFactory`:
+  - `TedV2Parser` — TED 2.0 R2.0.7/R2.0.8/R2.0.9 (2011–2024)
+  - `EFormsUBLParser` — eForms UBL ContractAwardNotice (2025+)
+- **Package numbering** — TED uses sequential Official Journal (OJ S) issue numbers, not calendar dates. Format: `{year}{issue:05d}` (e.g. `202400001`). A typical year has ~250 issues. The scraper stops after 10 consecutive 404s.
+- **Idempotent imports** — Re-importing a document is a no-op (skipped if `doc_id` exists).
