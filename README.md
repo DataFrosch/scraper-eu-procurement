@@ -46,6 +46,16 @@ A Python scraper for EU procurement contract award notices from [TED Europa](htt
    sqlite3 tedawards.db
    ```
 
+## Database Dump & Restore
+
+```bash
+# Dump the database (saves to dumps/ with timestamp)
+make dump
+
+# Restore from a dump file
+make restore FILE=dumps/tedawards_20260211_120000.dump
+```
+
 ## Configuration
 
 Set environment variables in `.env`:
