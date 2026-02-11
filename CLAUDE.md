@@ -76,22 +76,7 @@ The scraper supports two TED XML document formats:
 
 ## Database Architecture
 
-Database setup handled directly in `scraper.py`:
-
-- Engine and session factory created at module level from environment variables
-- `get_session()` context manager for transaction management with automatic commit/rollback
-- Schema automatically created on scraper initialization
-
-SQLAlchemy models in `models.py`:
-
-- `contracting_bodies` - Shared lookup table for purchasing organizations (composite unique constraint on all fields, `postgresql_nulls_not_distinct=True`)
-- `ted_documents` - Main document metadata (PK: doc_id, FK to contracting_bodies)
-- `contracts` - Procurement items (FK to ted_documents and contracting_bodies)
-- `awards` - Award decisions (FK to contracts)
-- `contractors` - Shared lookup table for winning companies (composite unique constraint on all fields, `postgresql_nulls_not_distinct=True`)
-- `award_contractors` - Junction table linking awards to contractors (many-to-many)
-
-Entity deduplication uses PostgreSQL's upsert-returning pattern (`INSERT ... ON CONFLICT DO UPDATE ... RETURNING id`) to get-or-create contracting bodies and contractors on insert. Re-importing the same document is idempotent (skipped if doc_id exists).
+Schema defined in `models.py`, setup in `scraper.py`. Contractors and contracting bodies are shared lookup tables with exact-match dedup via PostgreSQL upsert-returning (`INSERT ... ON CONFLICT DO UPDATE ... RETURNING id`). Re-importing the same document is idempotent (skipped if doc_id exists).
 
 ## Format Detection & Parser Selection
 

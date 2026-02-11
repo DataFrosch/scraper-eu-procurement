@@ -135,8 +135,13 @@ def get_package_files(
     return files if files else None
 
 
+def _normalize_country_code(value: str | None) -> str | None:
+    return value.upper() if value else value
+
+
 def _upsert_contracting_body(session: Session, cb_data: dict) -> int:
     """Upsert a contracting body and return its id."""
+    cb_data["country_code"] = _normalize_country_code(cb_data.get("country_code"))
     stmt = (
         insert(ContractingBody)
         .values(**cb_data)
@@ -151,6 +156,9 @@ def _upsert_contracting_body(session: Session, cb_data: dict) -> int:
 
 def _upsert_contractor(session: Session, contractor_data: dict) -> int:
     """Upsert a contractor and return its id."""
+    contractor_data["country_code"] = _normalize_country_code(
+        contractor_data.get("country_code")
+    )
     stmt = (
         insert(Contractor)
         .values(**contractor_data)
@@ -192,7 +200,6 @@ def save_document(award_data: TedAwardDataModel) -> bool:
         contract = Contract(
             **award_data.contract.model_dump(),
             ted_doc_id=doc.doc_id,
-            contracting_body_id=cb_id,
         )
         session.add(contract)
         session.flush()

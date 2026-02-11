@@ -48,15 +48,14 @@ award_contractors = Table(
         "award_id",
         Integer,
         ForeignKey("awards.id", ondelete="CASCADE"),
-        nullable=False,
+        primary_key=True,
     ),
     Column(
         "contractor_id",
         Integer,
         ForeignKey("contractors.id"),
-        nullable=False,
+        primary_key=True,
     ),
-    UniqueConstraint("award_id", "contractor_id", name="uq_award_contractor"),
 )
 
 
@@ -82,9 +81,6 @@ class ContractingBody(Base):
     documents: Mapped[List["TEDDocument"]] = relationship(
         "TEDDocument", back_populates="contracting_body"
     )
-    contracts: Mapped[List["Contract"]] = relationship(
-        "Contract", back_populates="contracting_body"
-    )
 
     __table_args__ = (
         UniqueConstraint(
@@ -105,10 +101,6 @@ class ContractingBody(Base):
         ),
         Index("idx_contracting_body_country", "country_code"),
     )
-
-    @validates("country_code")
-    def validate_country_code(self, key, value):
-        return _normalize_country_code(value)
 
 
 class TEDDocument(Base):
@@ -154,9 +146,6 @@ class Contract(Base):
     ted_doc_id: Mapped[str] = mapped_column(
         String, ForeignKey("ted_documents.doc_id", ondelete="CASCADE"), nullable=False
     )
-    contracting_body_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("contracting_bodies.id"), nullable=False
-    )
     title: Mapped[str] = mapped_column(Text, nullable=False)
     short_description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     main_cpv_code: Mapped[Optional[str]] = mapped_column(String, nullable=True)
@@ -166,16 +155,12 @@ class Contract(Base):
     document: Mapped["TEDDocument"] = relationship(
         "TEDDocument", back_populates="contracts"
     )
-    contracting_body: Mapped["ContractingBody"] = relationship(
-        "ContractingBody", back_populates="contracts"
-    )
     awards: Mapped[List["Award"]] = relationship(
         "Award", back_populates="contract", cascade="all, delete-orphan"
     )
 
     __table_args__ = (
         Index("idx_contract_document", "ted_doc_id"),
-        Index("idx_contract_body", "contracting_body_id"),
         Index("idx_contracts_cpv", "main_cpv_code"),
     )
 
@@ -233,7 +218,3 @@ class Contractor(Base):
         ),
         Index("idx_contractors_country", "country_code"),
     )
-
-    @validates("country_code")
-    def validate_country_code(self, key, value):
-        return _normalize_country_code(value)
