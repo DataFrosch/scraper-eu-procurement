@@ -41,12 +41,22 @@ class ContractingBodyModel(BaseModel):
     main_activity_code: Optional[str] = Field(None, description="Main activity code")
 
 
+class CpvCodeEntry(BaseModel):
+    """CPV code entry."""
+
+    code: str = Field(..., description="CPV code")
+    description: Optional[str] = Field(None, description="CPV code description")
+
+
 class ContractModel(BaseModel):
     """Contract model."""
 
     title: str = Field(..., description="Contract title")
     short_description: Optional[str] = Field(None, description="Short description")
     main_cpv_code: Optional[str] = Field(None, description="Main CPV code")
+    cpv_codes: List[CpvCodeEntry] = Field(
+        default_factory=list, description="All CPV codes (main + additional)"
+    )
     nuts_code: Optional[str] = Field(
         None, description="NUTS code for performance location"
     )

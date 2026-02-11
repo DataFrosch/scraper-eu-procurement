@@ -30,13 +30,16 @@ from tedawards.models import (
     Contract,
     Award,
     Contractor,
+    CpvCode,
     award_contractors,
+    contract_cpv_codes,
 )
 from tedawards.schema import (
     TedAwardDataModel,
     DocumentModel,
     ContractingBodyModel,
     ContractModel,
+    CpvCodeEntry,
     AwardModel,
     ContractorModel,
 )
@@ -87,6 +90,7 @@ def sample_award_data():
         contract=ContractModel(
             title="Test Contract",
             main_cpv_code="45000000",
+            cpv_codes=[CpvCodeEntry(code="45000000")],
             nuts_code="DE212",
         ),
         awards=[
@@ -324,7 +328,7 @@ class TestSaveDocument:
             contracting_body=ContractingBodyModel(
                 official_name="Test Body 1", country_code="DE"
             ),
-            contract=ContractModel(title="Contract 1", main_cpv_code="45000000"),
+            contract=ContractModel(title="Contract 1"),
             awards=[
                 AwardModel(
                     contractors=[
@@ -346,7 +350,7 @@ class TestSaveDocument:
             contracting_body=ContractingBodyModel(
                 official_name="Test Body 2", country_code="FR"
             ),
-            contract=ContractModel(title="Contract 2", main_cpv_code="45000000"),
+            contract=ContractModel(title="Contract 2"),
             awards=[
                 AwardModel(
                     contractors=[
@@ -391,9 +395,7 @@ class TestSaveDocument:
             contracting_body=ContractingBodyModel(
                 official_name="Test Body", country_code="DE"
             ),
-            contract=ContractModel(
-                title="Multi-lot Contract", main_cpv_code="45000000"
-            ),
+            contract=ContractModel(title="Multi-lot Contract"),
             awards=[
                 AwardModel(
                     award_title="Lot 1",
@@ -459,9 +461,7 @@ class TestSaveDocument:
             contracting_body=ContractingBodyModel(
                 official_name="Ministry of Health", country_code="DE", town="Berlin"
             ),
-            contract=ContractModel(
-                title="Medical Supplies Contract 2024", main_cpv_code="33000000"
-            ),
+            contract=ContractModel(title="Medical Supplies Contract 2024"),
             awards=[AwardModel(contractors=[])],
         )
 
@@ -474,9 +474,7 @@ class TestSaveDocument:
             contracting_body=ContractingBodyModel(
                 official_name="Ministry of Health", country_code="DE", town="Berlin"
             ),
-            contract=ContractModel(
-                title="IT Services Contract 2024", main_cpv_code="72000000"
-            ),
+            contract=ContractModel(title="IT Services Contract 2024"),
             awards=[AwardModel(contractors=[])],
         )
 
@@ -517,7 +515,7 @@ class TestSaveDocument:
             contracting_body=ContractingBodyModel(
                 official_name="Ministry of Health", country_code="DE", town="Berlin"
             ),
-            contract=ContractModel(title="Contract 1", main_cpv_code="33000000"),
+            contract=ContractModel(title="Contract 1"),
             awards=[AwardModel(contractors=[])],
         )
 
@@ -530,7 +528,7 @@ class TestSaveDocument:
             contracting_body=ContractingBodyModel(
                 official_name="Ministry of Health", country_code="FR", town="Paris"
             ),
-            contract=ContractModel(title="Contract 2", main_cpv_code="33000000"),
+            contract=ContractModel(title="Contract 2"),
             awards=[AwardModel(contractors=[])],
         )
 
@@ -541,6 +539,163 @@ class TestSaveDocument:
         try:
             cbs = session.execute(select(ContractingBody)).all()
             assert len(cbs) == 2
+        finally:
+            session.close()
+
+    def test_cpv_code_lookup_table_deduplication(self, test_db):
+        """Test that same CPV code from two documents creates one lookup row."""
+        from tedawards.scraper import SessionLocal
+
+        award_data_1 = TedAwardDataModel(
+            document=DocumentModel(
+                doc_id="12345-2024",
+                publication_date=date(2024, 1, 1),
+                source_country="DE",
+            ),
+            contracting_body=ContractingBodyModel(
+                official_name="Body 1", country_code="DE"
+            ),
+            contract=ContractModel(
+                title="Contract 1",
+                main_cpv_code="45000000",
+                cpv_codes=[
+                    CpvCodeEntry(
+                        code="45000000",
+                        description="Construction work",
+                    )
+                ],
+            ),
+            awards=[AwardModel(contractors=[])],
+        )
+
+        award_data_2 = TedAwardDataModel(
+            document=DocumentModel(
+                doc_id="67890-2024",
+                publication_date=date(2024, 1, 2),
+                source_country="FR",
+            ),
+            contracting_body=ContractingBodyModel(
+                official_name="Body 2", country_code="FR"
+            ),
+            contract=ContractModel(
+                title="Contract 2",
+                main_cpv_code="45000000",
+                cpv_codes=[
+                    CpvCodeEntry(
+                        code="45000000",
+                        description="Construction work",
+                    )
+                ],
+            ),
+            awards=[AwardModel(contractors=[])],
+        )
+
+        save_document(award_data_1)
+        save_document(award_data_2)
+
+        session = SessionLocal()
+        try:
+            # Only one CPV code row (deduplicated)
+            cpv_rows = session.execute(select(CpvCode)).all()
+            assert len(cpv_rows) == 1
+            assert cpv_rows[0][0].code == "45000000"
+            assert cpv_rows[0][0].description == "Construction work"
+
+            # But two junction table rows (one per contract)
+            links = session.execute(select(contract_cpv_codes)).all()
+            assert len(links) == 2
+        finally:
+            session.close()
+
+    def test_cpv_description_preserved_when_null(self, test_db):
+        """Test that existing description is preserved when later doc has NULL description."""
+        from tedawards.scraper import SessionLocal
+
+        # First doc has description
+        award_data_1 = TedAwardDataModel(
+            document=DocumentModel(
+                doc_id="12345-2024",
+                publication_date=date(2024, 1, 1),
+                source_country="DE",
+            ),
+            contracting_body=ContractingBodyModel(
+                official_name="Body 1", country_code="DE"
+            ),
+            contract=ContractModel(
+                title="Contract 1",
+                main_cpv_code="45000000",
+                cpv_codes=[
+                    CpvCodeEntry(
+                        code="45000000",
+                        description="Construction work",
+                    )
+                ],
+            ),
+            awards=[AwardModel(contractors=[])],
+        )
+
+        # Second doc has NULL description (e.g. eForms)
+        award_data_2 = TedAwardDataModel(
+            document=DocumentModel(
+                doc_id="67890-2024",
+                publication_date=date(2024, 1, 2),
+                source_country="FR",
+            ),
+            contracting_body=ContractingBodyModel(
+                official_name="Body 2", country_code="FR"
+            ),
+            contract=ContractModel(
+                title="Contract 2",
+                main_cpv_code="45000000",
+                cpv_codes=[CpvCodeEntry(code="45000000", description=None)],
+            ),
+            awards=[AwardModel(contractors=[])],
+        )
+
+        save_document(award_data_1)
+        save_document(award_data_2)
+
+        session = SessionLocal()
+        try:
+            cpv = session.execute(
+                select(CpvCode).where(CpvCode.code == "45000000")
+            ).scalar_one()
+            assert cpv.description == "Construction work", (
+                "Description should be preserved when later doc has NULL"
+            )
+        finally:
+            session.close()
+
+    def test_duplicate_cpv_code_deduplicated(self, test_db):
+        """Test that duplicate CPV codes in list create one junction table row."""
+        from tedawards.scraper import SessionLocal
+
+        award_data = TedAwardDataModel(
+            document=DocumentModel(
+                doc_id="12345-2024",
+                publication_date=date(2024, 1, 1),
+                source_country="DE",
+            ),
+            contracting_body=ContractingBodyModel(
+                official_name="Body 1", country_code="DE"
+            ),
+            contract=ContractModel(
+                title="Contract 1",
+                main_cpv_code="50750000",
+                cpv_codes=[
+                    CpvCodeEntry(code="50750000"),
+                    CpvCodeEntry(code="50750000"),
+                ],
+            ),
+            awards=[AwardModel(contractors=[])],
+        )
+
+        save_document(award_data)
+
+        session = SessionLocal()
+        try:
+            links = session.execute(select(contract_cpv_codes)).all()
+            assert len(links) == 1
         finally:
             session.close()
 

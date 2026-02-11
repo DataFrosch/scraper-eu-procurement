@@ -93,6 +93,29 @@ class TestEFormsUBLParser:
                     f"Contractor name should be present in {fixture_name}"
                 )
 
+    def test_parse_eforms_cpv_codes_main_only(self):
+        """Test CPV extraction for eForms with main code only (no additional)."""
+        fixture_file = FIXTURES_DIR / "eforms_ubl_2025.xml"
+        result = eforms_ubl.parse_xml_file(fixture_file)
+        contract = result[0].contract
+
+        assert contract.main_cpv_code == "33195000"
+        assert len(contract.cpv_codes) == 1
+        assert contract.cpv_codes[0].code == "33195000"
+        assert contract.cpv_codes[0].description is None
+
+    def test_parse_eforms_cpv_codes_with_additional(self):
+        """Test CPV extraction for eForms with main + additional codes."""
+        fixture_file = FIXTURES_DIR / "eforms_ubl_2025_alt.xml"
+        result = eforms_ubl.parse_xml_file(fixture_file)
+        contract = result[0].contract
+
+        assert contract.main_cpv_code == "31520000"
+        assert len(contract.cpv_codes) == 5
+        assert contract.cpv_codes[0].code == "31520000"
+        additional_codes = {c.code for c in contract.cpv_codes[1:]}
+        assert additional_codes == {"45316110", "45311200", "45311100", "71355200"}
+
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v", "--tb=short"])

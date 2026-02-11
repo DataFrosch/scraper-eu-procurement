@@ -59,6 +59,34 @@ award_contractors = Table(
 )
 
 
+class CpvCode(Base):
+    """CPV code lookup table with code as natural primary key."""
+
+    __tablename__ = "cpv_codes"
+
+    code: Mapped[str] = mapped_column(String, primary_key=True)
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+
+# Junction table for many-to-many relationship between contracts and CPV codes
+contract_cpv_codes = Table(
+    "contract_cpv_codes",
+    Base.metadata,
+    Column(
+        "contract_id",
+        Integer,
+        ForeignKey("contracts.id", ondelete="CASCADE"),
+        primary_key=True,
+    ),
+    Column(
+        "cpv_code",
+        String,
+        ForeignKey("cpv_codes.code"),
+        primary_key=True,
+    ),
+)
+
+
 class ContractingBody(Base):
     """Shared contracting body lookup table (exact-match deduplication)."""
 
@@ -151,7 +179,9 @@ class Contract(Base):
     )
     title: Mapped[str] = mapped_column(Text, nullable=False)
     short_description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    main_cpv_code: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    main_cpv_code: Mapped[Optional[str]] = mapped_column(
+        String, ForeignKey("cpv_codes.code"), nullable=True
+    )
     contract_nature_code: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     nuts_code: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     procedure_type_code: Mapped[Optional[str]] = mapped_column(String, nullable=True)
@@ -162,10 +192,12 @@ class Contract(Base):
     awards: Mapped[List["Award"]] = relationship(
         "Award", back_populates="contract", cascade="all, delete-orphan"
     )
+    cpv_codes: Mapped[List["CpvCode"]] = relationship(
+        "CpvCode", secondary=contract_cpv_codes
+    )
 
     __table_args__ = (
         Index("idx_contract_document", "ted_doc_id"),
-        Index("idx_contracts_cpv", "main_cpv_code"),
         Index("idx_contracts_nuts", "nuts_code"),
     )
 

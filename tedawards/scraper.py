@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import List, Optional
 from contextlib import contextmanager
 from dotenv import load_dotenv
-from sqlalchemy import create_engine, select
+from sqlalchemy import create_engine, func, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import sessionmaker, Session
 
@@ -18,7 +18,9 @@ from .models import (
     Contract,
     Award,
     Contractor,
+    CpvCode,
     award_contractors,
+    contract_cpv_codes,
 )
 from .schema import TedAwardDataModel
 
@@ -171,6 +173,23 @@ def _upsert_contractor(session: Session, contractor_data: dict) -> int:
     return session.execute(stmt).scalar_one()
 
 
+def _upsert_cpv_code(session: Session, code: str, description: str | None) -> None:
+    """Upsert a CPV code. Preserves existing description if new one is NULL."""
+    stmt = (
+        insert(CpvCode)
+        .values(code=code, description=description)
+        .on_conflict_do_update(
+            index_elements=["code"],
+            set_={
+                "description": func.coalesce(
+                    insert(CpvCode).excluded.description, CpvCode.description
+                )
+            },
+        )
+    )
+    session.execute(stmt)
+
+
 def save_document(award_data: TedAwardDataModel) -> bool:
     """Save a single award document to database in its own transaction.
 
@@ -196,13 +215,28 @@ def save_document(award_data: TedAwardDataModel) -> bool:
         session.add(doc)
         session.flush()
 
-        # Create contract
+        # Upsert CPV codes into lookup table before creating contract (FK dependency)
+        contract_dict = award_data.contract.model_dump()
+        cpv_codes_data = contract_dict.pop("cpv_codes", [])
+        for cpv_entry in cpv_codes_data:
+            _upsert_cpv_code(session, cpv_entry["code"], cpv_entry["description"])
+
+        # Create contract with main_cpv_code FK
         contract = Contract(
-            **award_data.contract.model_dump(),
+            **contract_dict,
             ted_doc_id=doc.doc_id,
         )
         session.add(contract)
         session.flush()
+
+        # Link all CPV codes to contract
+        for code in {e["code"] for e in cpv_codes_data}:
+            session.execute(
+                contract_cpv_codes.insert().values(
+                    contract_id=contract.id,
+                    cpv_code=code,
+                )
+            )
 
         # Create awards with contractor upserts
         for award_item in award_data.awards:

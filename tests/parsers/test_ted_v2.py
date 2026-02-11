@@ -113,6 +113,19 @@ class TestTedV2R207Parser:
         assert award.awarded_value == 408000.00
         assert award.awarded_value_currency == "GBP"
 
+    def test_parse_r207_cpv_codes(self):
+        """Test CPV code extraction for R2.0.7: main + additional with descriptions."""
+        fixture_file = FIXTURES_DIR / "ted_v2_r2_0_7_2011.xml"
+        result = ted_v2.parse_xml_file(fixture_file)
+        contract = result[0].contract
+
+        assert contract.main_cpv_code == "85147000"
+        assert len(contract.cpv_codes) == 2
+        assert contract.cpv_codes[0].code == "85147000"
+        assert contract.cpv_codes[0].description == "company health services"
+        assert contract.cpv_codes[1].code == "85140000"
+        assert contract.cpv_codes[1].description == "miscellaneous health services"
+
 
 class TestTedV2R208Parser:
     """Tests for TED 2.0 R2.0.8 format parser."""
@@ -172,6 +185,19 @@ class TestTedV2R208Parser:
                     f"Contractor name should be present in {fixture_name}"
                 )
 
+    def test_parse_r208_cpv_codes(self):
+        """Test CPV code extraction for R2.0.8: main + additional with descriptions."""
+        fixture_file = FIXTURES_DIR / "ted_v2_r2_0_8_2015.xml"
+        result = ted_v2.parse_xml_file(fixture_file)
+        contract = result[0].contract
+
+        assert contract.main_cpv_code == "64110000"
+        assert len(contract.cpv_codes) == 2
+        assert contract.cpv_codes[0].code == "64110000"
+        assert contract.cpv_codes[0].description == "Postal services"
+        assert contract.cpv_codes[1].code == "64113000"
+        assert contract.cpv_codes[1].description == "Postal services related to parcels"
+
 
 class TestTedV2R209Parser:
     """Tests for TED 2.0 R2.0.9 format parser (F03_2014 forms)."""
@@ -210,6 +236,7 @@ class TestTedV2R209Parser:
         assert "Medizinische Universität Innsbruck" in contracting_body.official_name
         assert contracting_body.country_code == "AT", "Country code should be Austria"
         assert contracting_body.town == "Innsbruck", "Town should be Innsbruck"
+        assert contracting_body.nuts_code == "AT332", "NUTS code should be AT332"
 
         # Validate contract
         contract = award_data.contract
@@ -218,7 +245,13 @@ class TestTedV2R209Parser:
         assert "Pipettierroboter" in contract.title, (
             "Title should mention Pipettierroboter"
         )
-        assert contract.main_cpv_code == "38430000", "CPV code should match"
+        assert contract.nuts_code == "AT332", (
+            "Performance location NUTS should be AT332"
+        )
+        assert contract.main_cpv_code == "38430000", "Main CPV code should match"
+        assert len(contract.cpv_codes) == 1, "Should have one CPV code"
+        assert contract.cpv_codes[0].code == "38430000", "CPV code should match"
+        assert contract.cpv_codes[0].description == "Detection and analysis apparatus"
 
         # Validate awards
         assert len(award_data.awards) > 0, "Should have at least one award"
@@ -238,6 +271,7 @@ class TestTedV2R209Parser:
             "Contractor should be Hamilton Germany"
         )
         assert contractor.country_code == "DE", "Contractor country should be Germany"
+        assert contractor.nuts_code == "DE21H", "Contractor NUTS should be DE21H"
 
     @pytest.mark.parametrize("fixture_name", TED_V2_R209_FIXTURES)
     def test_parse_r209_document(self, fixture_name):

@@ -19,6 +19,7 @@ from ..schema import (
     DocumentModel,
     ContractingBodyModel,
     ContractModel,
+    CpvCodeEntry,
     AwardModel,
     ContractorModel,
 )
@@ -245,10 +246,18 @@ def _extract_contract_info(root: etree._Element) -> Optional[ContractModel]:
     title_elem = root.xpath(".//efac:SettledContract/cbc:Title", namespaces=NAMESPACES)
     title = first_text(title_elem) or ""
 
-    cpv_elem = root.xpath(
-        ".//cac:ProcurementProject/cac:MainCommodityClassification/cbc:ItemClassificationCode",
+    # Main CPV from top-level ProcurementProject (direct child, not lot-level to avoid duplicates)
+    cpv_main_elems = root.xpath(
+        "./cac:ProcurementProject/cac:MainCommodityClassification/cbc:ItemClassificationCode",
         namespaces=NAMESPACES,
     )
+
+    # Additional CPVs from top-level ProcurementProject (direct child)
+    cpv_additional_elems = root.xpath(
+        "./cac:ProcurementProject/cac:AdditionalCommodityClassification/cbc:ItemClassificationCode",
+        namespaces=NAMESPACES,
+    )
+
     nature_elem = root.xpath(
         ".//cac:ProcurementProject/cbc:ProcurementTypeCode", namespaces=NAMESPACES
     )
@@ -265,10 +274,23 @@ def _extract_contract_info(root: etree._Element) -> Optional[ContractModel]:
         namespaces=NAMESPACES,
     )
 
+    # Build CPV codes list (no descriptions available in eForms)
+    cpv_codes: list[CpvCodeEntry] = []
+
+    main_code = first_text(cpv_main_elems)
+    if main_code:
+        cpv_codes.append(CpvCodeEntry(code=main_code))
+
+    for additional_elem in cpv_additional_elems:
+        additional_code = additional_elem.text
+        if additional_code and additional_code.strip():
+            cpv_codes.append(CpvCodeEntry(code=additional_code.strip()))
+
     return ContractModel(
         title=title,
         short_description=title,
-        main_cpv_code=first_text(cpv_elem),
+        main_cpv_code=main_code,
+        cpv_codes=cpv_codes,
         nuts_code=first_text(nuts_elem),
         contract_nature_code=first_text(nature_elem),
         procedure_type_code=first_text(proc_elem),

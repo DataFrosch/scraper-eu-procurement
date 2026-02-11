@@ -21,6 +21,7 @@ from ..schema import (
     DocumentModel,
     ContractingBodyModel,
     ContractModel,
+    CpvCodeEntry,
     AwardModel,
     ContractorModel,
 )
@@ -348,6 +349,18 @@ def _extract_contract_info(
         return _extract_contract_info_r207(root)
 
 
+def _build_cpv_description_map(root: etree._Element) -> dict[str, str]:
+    """Build a map of CPV code -> description from CODED_DATA_SECTION/ORIGINAL_CPV."""
+    desc_map = {}
+    original_cpv_elems = root.xpath('.//*[local-name()="ORIGINAL_CPV"]')
+    for elem in original_cpv_elems:
+        code = elem.get("CODE")
+        text = elem.text
+        if code and text:
+            desc_map[code] = text.strip()
+    return desc_map
+
+
 def _extract_contract_info_r207(root: etree._Element) -> Optional[ContractModel]:
     """Extract contract info for R2.0.7/R2.0.8 formats."""
     title_elem = root.find(
@@ -359,6 +372,12 @@ def _extract_contract_info_r207(root: etree._Element) -> Optional[ContractModel]
 
     cpv_main_elem = root.find(
         ".//{http://publications.europa.eu/TED_schema/Export}CPV_MAIN"
+        "//{http://publications.europa.eu/TED_schema/Export}CPV_CODE"
+    )
+
+    # Additional CPV codes
+    cpv_additional_elems = root.findall(
+        ".//{http://publications.europa.eu/TED_schema/Export}CPV_ADDITIONAL"
         "//{http://publications.europa.eu/TED_schema/Export}CPV_CODE"
     )
 
@@ -380,10 +399,34 @@ def _extract_contract_info_r207(root: etree._Element) -> Optional[ContractModel]
         else None
     )
 
+    # Build CPV codes list with descriptions
+    cpv_desc_map = _build_cpv_description_map(root)
+    cpv_codes: list[CpvCodeEntry] = []
+
+    main_code = elem_attr(cpv_main_elem, "CODE")
+    if main_code:
+        cpv_codes.append(
+            CpvCodeEntry(
+                code=main_code,
+                description=cpv_desc_map.get(main_code),
+            )
+        )
+
+    for additional_elem in cpv_additional_elems:
+        additional_code = additional_elem.get("CODE")
+        if additional_code:
+            cpv_codes.append(
+                CpvCodeEntry(
+                    code=additional_code,
+                    description=cpv_desc_map.get(additional_code),
+                )
+            )
+
     return ContractModel(
         title=element_text(title_elem) or "",
         short_description=element_text(description_elem),
-        main_cpv_code=elem_attr(cpv_main_elem, "CODE"),
+        main_cpv_code=main_code,
+        cpv_codes=cpv_codes,
         nuts_code=nuts_code,
         contract_nature_code=elem_attr(nature_elem, "CODE"),
         procedure_type_code=elem_attr(procedure_elem, "CODE"),
@@ -413,12 +456,28 @@ def _extract_contract_info_r209(root: etree._Element) -> Optional[ContractModel]
     )
     nuts_code = nuts_elems[0].get("CODE") if nuts_elems else None
 
+    # Build CPV codes list with descriptions
+    cpv_desc_map = _build_cpv_description_map(root)
+    cpv_codes: list[CpvCodeEntry] = []
+
+    main_code = None
+    if cpv_main_elems:
+        main_code = cpv_main_elems[0].get("CODE")
+        if main_code:
+            cpv_codes.append(
+                CpvCodeEntry(
+                    code=main_code,
+                    description=cpv_desc_map.get(main_code),
+                )
+            )
+
     return ContractModel(
         title=element_text(title_elems[0]) if title_elems else "",
         short_description=(
             element_text(description_elems[0]) if description_elems else None
         ),
-        main_cpv_code=cpv_main_elems[0].get("CODE") if cpv_main_elems else None,
+        main_cpv_code=main_code,
+        cpv_codes=cpv_codes,
         nuts_code=nuts_code,
         contract_nature_code=(
             type_contract_elems[0].get("CTYPE") if type_contract_elems else None
