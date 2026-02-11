@@ -24,8 +24,8 @@ def parse_int_comma_thousands(value_str: str) -> Optional[float]:
     if not stripped:
         return None
 
-    # Must match: 1-3 digits, then one or more groups of comma + exactly 3 digits
-    if not re.match(r"^\d{1,3}(,\d{3})+$", stripped):
+    # Must match: 1-3 digits, then 1-3 groups of comma + exactly 3 digits (max 12 digits)
+    if not re.match(r"^\d{1,3}(,\d{3}){1,3}$", stripped):
         return None
 
     # Remove commas

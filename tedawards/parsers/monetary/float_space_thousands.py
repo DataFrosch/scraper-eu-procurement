@@ -34,8 +34,8 @@ def parse_float_space_thousands(value_str: str) -> Optional[float]:
 
     # Must match: digits with space-separated groups, optional decimal part (exactly 2 decimal places)
     # Examples: "10 760 400", "1 234,56", "1 234.56", "400 000"
-    # Pattern: starts with 1-3 digits, then groups of space + 3 digits, optional decimal
-    if not re.match(r"^\d{1,3}(?: \d{3})*(?:[,\.]\d{2})?$", stripped):
+    # Pattern: starts with 1-3 digits, then 1-3 groups of space + 3 digits (max 12 digits), optional decimal
+    if not re.match(r"^\d{1,3}(?: \d{3}){1,3}(?:[,\.]\d{2})?$", stripped):
         return None
 
     # Remove spaces (thousands separator)

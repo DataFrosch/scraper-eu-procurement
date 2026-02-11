@@ -28,8 +28,8 @@ def parse_float_space_thousands_comma_3(value_str: str) -> Optional[float]:
     if " " not in stripped:
         return None
 
-    # Must match: space-separated thousands with comma and exactly 3 decimal digits
-    if not re.match(r"^\d{1,3}(?: \d{3})*,\d{3}$", stripped):
+    # Must match: space-separated thousands (1-3 groups) with comma and exactly 3 decimal digits
+    if not re.match(r"^\d{1,3}(?: \d{3}){1,3},\d{3}$", stripped):
         return None
 
     # Remove spaces and replace comma with dot
