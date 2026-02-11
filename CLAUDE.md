@@ -15,7 +15,7 @@ TED Awards scraper for analyzing EU procurement contract awards from **2011 onwa
 1. **Award-only focus**: Filter XML parsing to only process contract award notices
 2. **Environment configuration**: All DB settings via env vars (.env for dev)
 3. **Year-based scraping**: Scrape by year, iterating through sequential OJ issue numbers (not calendar dates)
-4. **Raw source data model**: Store data exactly as it appears in each TED document. No deduplication at import time - each document has its own contracting body and contractor records. Deduplication can be done later as a separate layer (views, entity resolution) on top of the raw data.
+4. **Raw source data model**: Store data exactly as it appears in each TED document. The import layer is a faithful mirror of TED - no cleaning, no deduplication, no interpretation. Each document has its own contracting body and contractor records. All data quality work (deduplication, entity resolution, outlier filtering) belongs in a separate analysis layer on top of the raw data. This is a deliberate design choice: these decisions are context-dependent and should be made by the researcher, not the importer. For example, whether two subdivisions of a company are "the same company" depends on the research question. Similarly, TED contains nonsense monetary values - where to draw the boundary of what counts as nonsense is a judgment call that varies by analysis.
 5. **Pydantic as parser contract**: Pydantic models in `schema.py` define the interface between parsers and the database layer. This enables:
    - Fast parser tests without database setup (just validate Pydantic output)
    - Runtime type validation catches parser bugs early
