@@ -28,6 +28,14 @@ class TestParseMonetaryValue:
         """Should match float_dot_decimal_1 parser."""
         assert parse_monetary_value("979828.1", "test_field") == 979828.1
 
+    def test_doublespace_thousands_format(self):
+        """Should match float_doublespace_thousands parser."""
+        assert parse_monetary_value("1 011  606,51", "test_field") == 1011606.51
+
+    def test_doublespace_thousands_two_groups(self):
+        """Should match float_doublespace_thousands parser."""
+        assert parse_monetary_value("336  256,12", "test_field") == 336256.12
+
     def test_no_match_logs_warning(self, caplog):
         """Should log warning when no parser matches."""
         result = parse_monetary_value("año 2011: 34 993,09", "awarded_value")
