@@ -10,6 +10,17 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql
 
+  test-db:
+    image: postgres:18
+    environment:
+      POSTGRES_USER: tedawards
+      POSTGRES_PASSWORD: tedawards
+      POSTGRES_DB: tedawards_test
+    ports:
+      - "5433:5432"
+    profiles:
+      - test
+
   metabase:
     image: metabase/metabase:latest
     ports:

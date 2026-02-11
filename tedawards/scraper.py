@@ -7,10 +7,19 @@ from typing import List, Optional
 from contextlib import contextmanager
 from dotenv import load_dotenv
 from sqlalchemy import create_engine, select
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import sessionmaker, Session
 
 from .parsers import try_parse_award
-from .models import Base, TEDDocument, ContractingBody, Contract, Award, Contractor
+from .models import (
+    Base,
+    TEDDocument,
+    ContractingBody,
+    Contract,
+    Award,
+    Contractor,
+    award_contractors,
+)
 from .schema import TedAwardDataModel
 
 load_dotenv()
@@ -126,6 +135,34 @@ def get_package_files(
     return files if files else None
 
 
+def _upsert_contracting_body(session: Session, cb_data: dict) -> int:
+    """Upsert a contracting body and return its id."""
+    stmt = (
+        insert(ContractingBody)
+        .values(**cb_data)
+        .on_conflict_do_update(
+            constraint="uq_contracting_body_identity",
+            set_={"official_name": insert(ContractingBody).excluded.official_name},
+        )
+        .returning(ContractingBody.id)
+    )
+    return session.execute(stmt).scalar_one()
+
+
+def _upsert_contractor(session: Session, contractor_data: dict) -> int:
+    """Upsert a contractor and return its id."""
+    stmt = (
+        insert(Contractor)
+        .values(**contractor_data)
+        .on_conflict_do_update(
+            constraint="uq_contractor_identity",
+            set_={"official_name": insert(Contractor).excluded.official_name},
+        )
+        .returning(Contractor.id)
+    )
+    return session.execute(stmt).scalar_one()
+
+
 def save_document(award_data: TedAwardDataModel) -> bool:
     """Save a single award document to database in its own transaction.
 
@@ -141,26 +178,42 @@ def save_document(award_data: TedAwardDataModel) -> bool:
             logger.debug(f"Document {doc_id} already imported, skipping")
             return False
 
-        doc = TEDDocument(**award_data.document.model_dump())
+        # Upsert contracting body
+        cb_id = _upsert_contracting_body(
+            session, award_data.contracting_body.model_dump()
+        )
 
-        cb = ContractingBody(**award_data.contracting_body.model_dump())
-        doc.contracting_bodies.append(cb)
+        # Create document with FK to contracting body
+        doc = TEDDocument(**award_data.document.model_dump(), contracting_body_id=cb_id)
+        session.add(doc)
+        session.flush()
 
-        contract = Contract(**award_data.contract.model_dump())
-        contract.document = doc
-        contract.contracting_body = cb
+        # Create contract
+        contract = Contract(
+            **award_data.contract.model_dump(),
+            ted_doc_id=doc.doc_id,
+            contracting_body_id=cb_id,
+        )
+        session.add(contract)
+        session.flush()
 
+        # Create awards with contractor upserts
         for award_item in award_data.awards:
             award_dict = award_item.model_dump()
             contractors_data = award_dict.pop("contractors", [])
 
-            award = Award(**award_dict)
-            contract.awards.append(award)
+            award = Award(**award_dict, contract_id=contract.id)
+            session.add(award)
+            session.flush()
 
             for contractor_data in contractors_data:
-                award.contractors.append(Contractor(**contractor_data))
+                contractor_id = _upsert_contractor(session, contractor_data)
+                session.execute(
+                    award_contractors.insert().values(
+                        award_id=award.id, contractor_id=contractor_id
+                    )
+                )
 
-        session.add(doc)
         return True
 
 

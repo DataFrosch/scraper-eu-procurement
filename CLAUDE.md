@@ -15,7 +15,7 @@ TED Awards scraper for analyzing EU procurement contract awards from **2011 onwa
 1. **Award-only focus**: Filter XML parsing to only process contract award notices
 2. **Environment configuration**: All DB settings via env vars (.env for dev)
 3. **Year-based scraping**: Scrape by year, iterating through sequential OJ issue numbers (not calendar dates)
-4. **Raw source data model**: Store data exactly as it appears in each TED document. The import layer is a faithful mirror of TED - no cleaning, no deduplication, no interpretation. Each document has its own contracting body and contractor records. All data quality work (deduplication, entity resolution, outlier filtering) belongs in a separate analysis layer on top of the raw data. This is a deliberate design choice: these decisions are context-dependent and should be made by the researcher, not the importer. For example, whether two subdivisions of a company are "the same company" depends on the research question. Similarly, TED contains nonsense monetary values - where to draw the boundary of what counts as nonsense is a judgment call that varies by analysis.
+4. **Raw source data with exact-match entity deduplication**: Store data as it appears in TED documents, but normalize contractors and contracting bodies into shared lookup tables. Only exact duplicates are merged (all fields must match) — no fuzzy matching, no interpretation. This reduces storage significantly (e.g. contractors from 25M to ~3M rows) while preserving every distinct entity. All further data quality work (fuzzy entity resolution, outlier filtering) belongs in a separate analysis layer. For example, whether two subdivisions of a company are "the same company" depends on the research question. Similarly, TED contains nonsense monetary values - where to draw the boundary of what counts as nonsense is a judgment call that varies by analysis.
 5. **Pydantic as parser contract**: Pydantic models in `schema.py` define the interface between parsers and the database layer. This enables:
    - Fast parser tests without database setup (just validate Pydantic output)
    - Runtime type validation catches parser bugs early
@@ -82,15 +82,16 @@ Database setup handled directly in `scraper.py`:
 - `get_session()` context manager for transaction management with automatic commit/rollback
 - Schema automatically created on scraper initialization
 
-SQLAlchemy models in `models.py` (raw source data, no deduplication):
+SQLAlchemy models in `models.py`:
 
-- `ted_documents` - Main document metadata (PK: doc_id)
-- `contracting_bodies` - Purchasing organizations (one per document, FK to ted_documents)
+- `contracting_bodies` - Shared lookup table for purchasing organizations (composite unique constraint on all fields, `postgresql_nulls_not_distinct=True`)
+- `ted_documents` - Main document metadata (PK: doc_id, FK to contracting_bodies)
 - `contracts` - Procurement items (FK to ted_documents and contracting_bodies)
 - `awards` - Award decisions (FK to contracts)
-- `contractors` - Winning companies (one per award, FK to awards)
+- `contractors` - Shared lookup table for winning companies (composite unique constraint on all fields, `postgresql_nulls_not_distinct=True`)
+- `award_contractors` - Junction table linking awards to contractors (many-to-many)
 
-Relationships are 1:many throughout - each document has its own records. Re-importing the same document is idempotent (skipped if doc_id exists).
+Entity deduplication uses PostgreSQL's upsert-returning pattern (`INSERT ... ON CONFLICT DO UPDATE ... RETURNING id`) to get-or-create contracting bodies and contractors on insert. Re-importing the same document is idempotent (skipped if doc_id exists).
 
 ## Format Detection & Parser Selection
 
@@ -135,12 +136,18 @@ uv run tedawards import --start-year 2024
 
 # Import downloaded packages for a range of years
 uv run tedawards import --start-year 2011 --end-year 2024
+
+# Start test database (separate PostgreSQL on port 5433)
+docker compose --profile test up -d
+
+# Run tests (requires test database running)
+uv run pytest tests/ -v
 ```
 
 ## Code Organization
 
 - `scraper.py` - Main scraper with database setup and session management
-- `models.py` - SQLAlchemy ORM models (raw source data, no deduplication)
+- `models.py` - SQLAlchemy ORM models (shared lookup tables for entities, junction table for award-contractor)
 - `schema.py` - Pydantic models defining the parser output contract (enables fast parser testing without DB)
 - `parsers/` - Format-specific XML parsers (each must return valid Pydantic models)
 - `main.py` - CLI interface

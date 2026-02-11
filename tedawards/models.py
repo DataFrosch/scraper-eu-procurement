@@ -1,13 +1,25 @@
 """
 SQLAlchemy models for TED awards database.
-Raw source data model - no deduplication at this layer.
+Contractors and contracting bodies are normalized into shared lookup tables
+with exact-match deduplication via composite unique constraints.
 """
 
 from datetime import date
 from decimal import Decimal
 from typing import List, Optional
 
-from sqlalchemy import Date, ForeignKey, Integer, Numeric, String, Text, Index
+from sqlalchemy import (
+    Column,
+    Date,
+    ForeignKey,
+    Integer,
+    Numeric,
+    String,
+    Table,
+    Text,
+    Index,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import (
     DeclarativeBase,
     Mapped,
@@ -28,46 +40,32 @@ class Base(DeclarativeBase):
     pass
 
 
-class TEDDocument(Base):
-    """Main TED document metadata."""
-
-    __tablename__ = "ted_documents"
-
-    doc_id: Mapped[str] = mapped_column(String, primary_key=True)
-    edition: Mapped[Optional[str]] = mapped_column(String, nullable=True)
-    version: Mapped[Optional[str]] = mapped_column(String, nullable=True)
-    reception_id: Mapped[Optional[str]] = mapped_column(String, nullable=True)
-    official_journal_ref: Mapped[Optional[str]] = mapped_column(String, nullable=True)
-    publication_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
-    dispatch_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
-    source_country: Mapped[Optional[str]] = mapped_column(String, nullable=True)
-    # Relationships
-    contracting_bodies: Mapped[List["ContractingBody"]] = relationship(
-        "ContractingBody", back_populates="document", cascade="all, delete-orphan"
-    )
-    contracts: Mapped[List["Contract"]] = relationship(
-        "Contract", back_populates="document", cascade="all, delete-orphan"
-    )
-
-    __table_args__ = (
-        Index("idx_ted_documents_pub_date", "publication_date"),
-        Index("idx_ted_documents_country", "source_country"),
-    )
-
-    @validates("source_country")
-    def validate_source_country(self, key, value):
-        return _normalize_country_code(value)
+# Junction table for many-to-many relationship between awards and contractors
+award_contractors = Table(
+    "award_contractors",
+    Base.metadata,
+    Column(
+        "award_id",
+        Integer,
+        ForeignKey("awards.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
+    Column(
+        "contractor_id",
+        Integer,
+        ForeignKey("contractors.id"),
+        nullable=False,
+    ),
+    UniqueConstraint("award_id", "contractor_id", name="uq_award_contractor"),
+)
 
 
 class ContractingBody(Base):
-    """Contracting body as it appears in a specific document (raw source data)."""
+    """Shared contracting body lookup table (exact-match deduplication)."""
 
     __tablename__ = "contracting_bodies"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    ted_doc_id: Mapped[str] = mapped_column(
-        String, ForeignKey("ted_documents.doc_id", ondelete="CASCADE"), nullable=False
-    )
     official_name: Mapped[str] = mapped_column(Text, nullable=False)
     address: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     town: Mapped[Optional[str]] = mapped_column(String, nullable=True)
@@ -81,20 +79,69 @@ class ContractingBody(Base):
     authority_type_code: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     main_activity_code: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     # Relationships
-    document: Mapped["TEDDocument"] = relationship(
-        "TEDDocument", back_populates="contracting_bodies"
+    documents: Mapped[List["TEDDocument"]] = relationship(
+        "TEDDocument", back_populates="contracting_body"
     )
     contracts: Mapped[List["Contract"]] = relationship(
         "Contract", back_populates="contracting_body"
     )
 
     __table_args__ = (
-        Index("idx_contracting_body_doc", "ted_doc_id"),
+        UniqueConstraint(
+            "official_name",
+            "address",
+            "town",
+            "postal_code",
+            "country_code",
+            "contact_point",
+            "phone",
+            "email",
+            "url_general",
+            "url_buyer",
+            "authority_type_code",
+            "main_activity_code",
+            name="uq_contracting_body_identity",
+            postgresql_nulls_not_distinct=True,
+        ),
         Index("idx_contracting_body_country", "country_code"),
     )
 
     @validates("country_code")
     def validate_country_code(self, key, value):
+        return _normalize_country_code(value)
+
+
+class TEDDocument(Base):
+    """Main TED document metadata."""
+
+    __tablename__ = "ted_documents"
+
+    doc_id: Mapped[str] = mapped_column(String, primary_key=True)
+    edition: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    version: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    reception_id: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    official_journal_ref: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    publication_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    dispatch_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    source_country: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    contracting_body_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("contracting_bodies.id"), nullable=False
+    )
+    # Relationships
+    contracting_body: Mapped["ContractingBody"] = relationship(
+        "ContractingBody", back_populates="documents"
+    )
+    contracts: Mapped[List["Contract"]] = relationship(
+        "Contract", back_populates="document", cascade="all, delete-orphan"
+    )
+
+    __table_args__ = (
+        Index("idx_ted_documents_pub_date", "publication_date"),
+        Index("idx_ted_documents_country", "source_country"),
+    )
+
+    @validates("source_country")
+    def validate_source_country(self, key, value):
         return _normalize_country_code(value)
 
 
@@ -152,31 +199,38 @@ class Award(Base):
     # Relationships
     contract: Mapped["Contract"] = relationship("Contract", back_populates="awards")
     contractors: Mapped[List["Contractor"]] = relationship(
-        "Contractor", back_populates="award", cascade="all, delete-orphan"
+        "Contractor", secondary=award_contractors, back_populates="awards"
     )
 
     __table_args__ = (Index("idx_award_contract", "contract_id"),)
 
 
 class Contractor(Base):
-    """Contractor as it appears in a specific award (raw source data)."""
+    """Shared contractor lookup table (exact-match deduplication)."""
 
     __tablename__ = "contractors"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    award_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("awards.id", ondelete="CASCADE"), nullable=False
-    )
     official_name: Mapped[str] = mapped_column(Text, nullable=False)
     address: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     town: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     postal_code: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     country_code: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     # Relationships
-    award: Mapped["Award"] = relationship("Award", back_populates="contractors")
+    awards: Mapped[List["Award"]] = relationship(
+        "Award", secondary=award_contractors, back_populates="contractors"
+    )
 
     __table_args__ = (
-        Index("idx_contractor_award", "award_id"),
+        UniqueConstraint(
+            "official_name",
+            "address",
+            "town",
+            "postal_code",
+            "country_code",
+            name="uq_contractor_identity",
+            postgresql_nulls_not_distinct=True,
+        ),
         Index("idx_contractors_country", "country_code"),
     )
 

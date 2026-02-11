@@ -30,6 +30,7 @@ from tedawards.models import (
     Contract,
     Award,
     Contractor,
+    award_contractors,
 )
 from tedawards.schema import (
     TedAwardDataModel,
@@ -39,6 +40,8 @@ from tedawards.schema import (
     AwardModel,
     ContractorModel,
 )
+
+TEST_DATABASE_URL = "postgresql://tedawards:tedawards@localhost:5433/tedawards_test"
 
 
 @pytest.fixture
@@ -50,17 +53,19 @@ def temp_data_dir():
 
 @pytest.fixture
 def test_db():
-    """Create a temporary in-memory database for testing."""
-    engine = create_engine("sqlite:///:memory:", echo=False)
+    """Create a PostgreSQL test database with fresh tables for each test."""
+    engine = create_engine(TEST_DATABASE_URL, echo=False)
+    Base.metadata.drop_all(engine)
     Base.metadata.create_all(engine)
     SessionLocal = sessionmaker(bind=engine, expire_on_commit=False)
 
-    # Patch the module-level engine and SessionLocal
     with (
         patch("tedawards.scraper.engine", engine),
         patch("tedawards.scraper.SessionLocal", SessionLocal),
     ):
         yield engine
+
+    engine.dispose()
 
 
 @pytest.fixture
@@ -243,13 +248,14 @@ class TestSaveDocument:
                 select(TEDDocument).where(TEDDocument.doc_id == "12345-2024")
             ).scalar_one()
             assert doc.edition == "2024/S 001-000001"
+            assert doc.contracting_body_id is not None
 
             cb = session.execute(
                 select(ContractingBody).where(
                     ContractingBody.official_name == "Test Contracting Body"
                 )
             ).scalar_one()
-            assert cb.ted_doc_id == "12345-2024"
+            assert doc.contracting_body_id == cb.id
 
             contract = session.execute(
                 select(Contract).where(Contract.ted_doc_id == "12345-2024")
@@ -268,7 +274,15 @@ class TestSaveDocument:
                 )
             ).scalar_one()
             assert contractor.country_code == "DE"
-            assert contractor.award_id == award.id
+
+            # Verify junction table link
+            link = session.execute(
+                select(award_contractors).where(
+                    award_contractors.c.award_id == award.id,
+                    award_contractors.c.contractor_id == contractor.id,
+                )
+            ).one()
+            assert link is not None
         finally:
             session.close()
 
@@ -288,8 +302,8 @@ class TestSaveDocument:
         finally:
             session.close()
 
-    def test_save_same_contractor_in_different_documents(self, test_db):
-        """Test that same contractor in different documents creates separate records (raw data)."""
+    def test_save_same_contractor_deduplicated(self, test_db):
+        """Test that same contractor in different documents creates one shared record."""
         from tedawards.scraper import SessionLocal
 
         award_data_1 = TedAwardDataModel(
@@ -341,12 +355,17 @@ class TestSaveDocument:
 
         session = SessionLocal()
         try:
+            # Only one contractor row (deduplicated)
             contractors = session.execute(
                 select(Contractor).where(
                     Contractor.official_name == "Shared Contractor Ltd"
                 )
             ).all()
-            assert len(contractors) == 2  # One per award (raw source data)
+            assert len(contractors) == 1
+
+            # But two junction table rows (one per award)
+            links = session.execute(select(award_contractors)).all()
+            assert len(links) == 2
         finally:
             session.close()
 
@@ -396,6 +415,9 @@ class TestSaveDocument:
 
             contractors = session.execute(select(Contractor)).all()
             assert len(contractors) == 2
+
+            links = session.execute(select(award_contractors)).all()
+            assert len(links) == 2
         finally:
             session.close()
 
@@ -416,8 +438,8 @@ class TestSaveDocument:
         finally:
             session.close()
 
-    def test_contracting_body_per_document(self, test_db):
-        """Test that each document has its own contracting body record (raw data model)."""
+    def test_contracting_body_deduplicated(self, test_db):
+        """Test that identical contracting bodies across documents are deduplicated."""
         from tedawards.scraper import SessionLocal
 
         award_data_1 = TedAwardDataModel(
@@ -457,23 +479,60 @@ class TestSaveDocument:
         try:
             assert len(session.execute(select(TEDDocument)).all()) == 2
 
+            # Only one contracting body row (deduplicated)
             cbs = session.execute(select(ContractingBody)).all()
-            assert len(cbs) == 2
+            assert len(cbs) == 1
 
-            cb1 = session.execute(
-                select(ContractingBody).where(
-                    ContractingBody.ted_doc_id == "12345-2024"
-                )
+            # Both documents point to the same contracting body
+            doc1 = session.execute(
+                select(TEDDocument).where(TEDDocument.doc_id == "12345-2024")
             ).scalar_one()
-            cb2 = session.execute(
-                select(ContractingBody).where(
-                    ContractingBody.ted_doc_id == "67890-2024"
-                )
+            doc2 = session.execute(
+                select(TEDDocument).where(TEDDocument.doc_id == "67890-2024")
             ).scalar_one()
-            assert cb1.official_name == "Ministry of Health"
-            assert cb2.official_name == "Ministry of Health"
+            assert doc1.contracting_body_id == doc2.contracting_body_id
 
             assert len(session.execute(select(Contract)).all()) == 2
+        finally:
+            session.close()
+
+    def test_different_contracting_bodies_not_deduplicated(self, test_db):
+        """Test that contracting bodies with different fields remain separate."""
+        from tedawards.scraper import SessionLocal
+
+        award_data_1 = TedAwardDataModel(
+            document=DocumentModel(
+                doc_id="12345-2024",
+                publication_date=date(2024, 1, 1),
+                source_country="DE",
+            ),
+            contracting_body=ContractingBodyModel(
+                official_name="Ministry of Health", country_code="DE", town="Berlin"
+            ),
+            contract=ContractModel(title="Contract 1", main_cpv_code="33000000"),
+            awards=[AwardModel(contractors=[])],
+        )
+
+        award_data_2 = TedAwardDataModel(
+            document=DocumentModel(
+                doc_id="67890-2024",
+                publication_date=date(2024, 1, 15),
+                source_country="FR",
+            ),
+            contracting_body=ContractingBodyModel(
+                official_name="Ministry of Health", country_code="FR", town="Paris"
+            ),
+            contract=ContractModel(title="Contract 2", main_cpv_code="33000000"),
+            awards=[AwardModel(contractors=[])],
+        )
+
+        save_document(award_data_1)
+        save_document(award_data_2)
+
+        session = SessionLocal()
+        try:
+            cbs = session.execute(select(ContractingBody)).all()
+            assert len(cbs) == 2
         finally:
             session.close()
 
@@ -483,18 +542,26 @@ class TestGetSession:
 
     def test_session_commits_on_success(self, test_db):
         """Test that session commits when no exception occurs."""
+        from tedawards.scraper import SessionLocal
+
+        # Need to create a contracting body first for the FK
+        cb_session = SessionLocal()
+        cb = ContractingBody(official_name="Test CB")
+        cb_session.add(cb)
+        cb_session.commit()
+        cb_id = cb.id
+        cb_session.close()
 
         with get_session() as session:
             doc = TEDDocument(
                 doc_id="test-doc",
                 edition="2024/S 001-000001",
                 publication_date=date(2024, 1, 1),
+                contracting_body_id=cb_id,
             )
             session.add(doc)
 
         # Verify document was committed
-        from tedawards.scraper import SessionLocal
-
         verify_session = SessionLocal()
         try:
             result = verify_session.execute(
@@ -506,6 +573,14 @@ class TestGetSession:
 
     def test_session_rolls_back_on_exception(self, test_db):
         """Test that session rolls back when exception occurs."""
+        from tedawards.scraper import SessionLocal
+
+        cb_session = SessionLocal()
+        cb = ContractingBody(official_name="Test CB")
+        cb_session.add(cb)
+        cb_session.commit()
+        cb_id = cb.id
+        cb_session.close()
 
         with pytest.raises(ValueError):
             with get_session() as session:
@@ -513,13 +588,12 @@ class TestGetSession:
                     doc_id="test-doc",
                     edition="2024/S 001-000001",
                     publication_date=date(2024, 1, 1),
+                    contracting_body_id=cb_id,
                 )
                 session.add(doc)
                 raise ValueError("Test error")
 
         # Verify document was NOT committed
-        from tedawards.scraper import SessionLocal
-
         verify_session = SessionLocal()
         try:
             result = verify_session.execute(
