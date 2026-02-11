@@ -92,6 +92,12 @@ TED packages use **Official Journal (OJ S) issue numbers**, not calendar dates:
 - Typical year has ~250 issues (not 365 days)
 - Scraper automatically handles gaps by stopping after 10 consecutive 404s
 
+## Methodology
+
+- **Raw data**: No deduplication or normalization at import time. Each document produces its own records.
+- **Monetary values**: Parsed as-is with no size caps. TED data contains nonsensical placeholder values (e.g. strings of 9s) — filtering outliers is left to the analysis stage.
+- **Language**: All documents processed regardless of language. Names and titles stored in the original submission language.
+
 ## Data Coverage
 
 - **Time Range**: January 2011 to present (14+ years of XML-formatted data)

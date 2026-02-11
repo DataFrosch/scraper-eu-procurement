@@ -3,11 +3,11 @@ SQLAlchemy models for TED awards database.
 Raw source data model - no deduplication at this layer.
 """
 
-from datetime import date, datetime
+from datetime import date
 from decimal import Decimal
 from typing import List, Optional
 
-from sqlalchemy import Date, DateTime, ForeignKey, Integer, Numeric, String, Text, Index
+from sqlalchemy import Date, ForeignKey, Integer, Numeric, String, Text, Index
 from sqlalchemy.orm import (
     DeclarativeBase,
     Mapped,
@@ -15,7 +15,6 @@ from sqlalchemy.orm import (
     relationship,
     validates,
 )
-from sqlalchemy.sql import func
 
 
 def _normalize_country_code(value: Optional[str]) -> Optional[str]:
@@ -42,8 +41,6 @@ class TEDDocument(Base):
     publication_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
     dispatch_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
     source_country: Mapped[Optional[str]] = mapped_column(String, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=func.now())
-
     # Relationships
     contracting_bodies: Mapped[List["ContractingBody"]] = relationship(
         "ContractingBody", back_populates="document", cascade="all, delete-orphan"
@@ -83,8 +80,6 @@ class ContractingBody(Base):
     contact_point: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     authority_type_code: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     main_activity_code: Mapped[Optional[str]] = mapped_column(String, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=func.now())
-
     # Relationships
     document: Mapped["TEDDocument"] = relationship(
         "TEDDocument", back_populates="contracting_bodies"
@@ -120,8 +115,6 @@ class Contract(Base):
     main_cpv_code: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     contract_nature_code: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     procedure_type_code: Mapped[Optional[str]] = mapped_column(String, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=func.now())
-
     # Relationships
     document: Mapped["TEDDocument"] = relationship(
         "TEDDocument", back_populates="contracts"
@@ -156,8 +149,6 @@ class Award(Base):
         Numeric(15, 2), nullable=True
     )
     awarded_value_currency: Mapped[Optional[str]] = mapped_column(String, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=func.now())
-
     # Relationships
     contract: Mapped["Contract"] = relationship("Contract", back_populates="awards")
     contractors: Mapped[List["Contractor"]] = relationship(
@@ -181,8 +172,6 @@ class Contractor(Base):
     town: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     postal_code: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     country_code: Mapped[Optional[str]] = mapped_column(String, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=func.now())
-
     # Relationships
     award: Mapped["Award"] = relationship("Award", back_populates="contractors")
 

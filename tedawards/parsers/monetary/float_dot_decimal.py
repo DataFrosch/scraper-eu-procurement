@@ -26,8 +26,8 @@ def parse_float_dot_decimal(value_str: str) -> Optional[float]:
     if not stripped:
         return None
 
-    # Must match: 1-13 digits with optional dot decimal (exactly 2 decimal places)
-    if not re.match(r"^\d{1,13}(\.\d{2})?$", stripped):
+    # Must match: digits with optional dot decimal (exactly 2 decimal places)
+    if not re.match(r"^\d+(\.\d{2})?$", stripped):
         return None
 
     return float(stripped)

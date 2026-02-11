@@ -26,9 +26,9 @@ def parse_float_comma_decimal(value_str: str) -> Optional[float]:
     if not stripped:
         return None
 
-    # Must match: 1-13 digits with comma decimal (exactly 2 decimal places)
+    # Must match: digits with comma decimal (exactly 2 decimal places)
     # Must have a comma (otherwise float_dot_decimal handles it)
-    if not re.match(r"^\d{1,13},\d{2}$", stripped):
+    if not re.match(r"^\d+,\d{2}$", stripped):
         return None
 
     # Replace comma with dot for float conversion

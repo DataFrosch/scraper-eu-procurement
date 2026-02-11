@@ -24,8 +24,8 @@ def parse_float_comma_decimal_4(value_str: str) -> Optional[float]:
     if not stripped:
         return None
 
-    # Must match: 1-13 digits with comma and exactly 4 decimal digits
-    if not re.match(r"^\d{1,13},\d{4}$", stripped):
+    # Must match: digits with comma and exactly 4 decimal digits
+    if not re.match(r"^\d+,\d{4}$", stripped):
         return None
 
     return float(stripped.replace(",", "."))
