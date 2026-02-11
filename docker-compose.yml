@@ -10,5 +10,17 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql
 
+  metabase:
+    image: metabase/metabase:latest
+    ports:
+      - "3000:3000"
+    depends_on:
+      - db
+    volumes:
+      - metabase-data:/metabase.db
+    profiles:
+      - analytics
+
 volumes:
   pgdata:
+  metabase-data:

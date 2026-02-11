@@ -24,6 +24,10 @@ class TestParseMonetaryValue:
     def test_integer(self):
         assert parse_monetary_value("1234", "test_field") == 1234.0
 
+    def test_dot_decimal_1_format(self):
+        """Should match float_dot_decimal_1 parser."""
+        assert parse_monetary_value("979828.1", "test_field") == 979828.1
+
     def test_no_match_logs_warning(self, caplog):
         """Should log warning when no parser matches."""
         result = parse_monetary_value("año 2011: 34 993,09", "awarded_value")
