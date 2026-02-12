@@ -7,7 +7,7 @@ TIMESTAMP := $(shell date +%Y%m%d_%H%M%S)
 
 dump:
 	mkdir -p $(DUMP_DIR)
-	docker compose exec db pg_dump -U $(DB_USER) -Fc $(DB_NAME) > $(DUMP_DIR)/$(DB_NAME)_$(TIMESTAMP).dump
+	docker compose exec -T db pg_dump -U $(DB_USER) -Fc $(DB_NAME) > $(DUMP_DIR)/$(DB_NAME)_$(TIMESTAMP).dump
 	@echo "Dumped to $(DUMP_DIR)/$(DB_NAME)_$(TIMESTAMP).dump"
 
 restore:
@@ -15,5 +15,5 @@ restore:
 		echo "Usage: make restore FILE=dumps/tedawards_YYYYMMDD_HHMMSS.dump"; \
 		exit 1; \
 	fi
-	docker compose exec db pg_restore -U $(DB_USER) -d $(DB_NAME) --clean --if-exists /$(FILE)
+	docker compose exec -T db pg_restore -U $(DB_USER) -d $(DB_NAME) --clean --if-exists < $(FILE)
 	@echo "Restored from $(FILE)"

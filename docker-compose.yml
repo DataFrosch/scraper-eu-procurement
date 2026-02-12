@@ -9,7 +9,6 @@ services:
       - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql
-      - ./dumps:/dumps
 
   test-db:
     image: postgres:18
