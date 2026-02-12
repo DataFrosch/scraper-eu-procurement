@@ -450,6 +450,10 @@ def _extract_contract_info_r209(root: etree._Element) -> Optional[ContractModel]
     )
     type_contract_elems = object_elem.xpath('.//*[local-name()="TYPE_CONTRACT"]')
 
+    # Procedure type from CODED_DATA_SECTION (same location as R2.0.7/R2.0.8)
+    procedure_elems = root.xpath('.//*[local-name()="PR_PROC"]')
+    procedure_elem = procedure_elems[0] if procedure_elems else None
+
     # Performance location NUTS from OBJECT_DESCR
     nuts_elems = object_elem.xpath(
         './/*[local-name()="OBJECT_DESCR"]//*[local-name()="NUTS"]'
@@ -482,6 +486,7 @@ def _extract_contract_info_r209(root: etree._Element) -> Optional[ContractModel]
         contract_nature_code=(
             type_contract_elems[0].get("CTYPE") if type_contract_elems else None
         ),
+        procedure_type_code=elem_attr(procedure_elem, "CODE"),
     )
 
 
