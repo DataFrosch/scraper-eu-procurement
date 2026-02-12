@@ -20,6 +20,7 @@ from ..schema import (
     ContractingBodyModel,
     ContractModel,
     CpvCodeEntry,
+    ProcedureTypeEntry,
     AwardModel,
     ContractorModel,
 )
@@ -286,6 +287,11 @@ def _extract_contract_info(root: etree._Element) -> Optional[ContractModel]:
         if additional_code and additional_code.strip():
             cpv_codes.append(CpvCodeEntry(code=additional_code.strip()))
 
+    proc_code = first_text(proc_elem)
+    procedure_type = (
+        ProcedureTypeEntry(code=proc_code, description=None) if proc_code else None
+    )
+
     return ContractModel(
         title=title,
         short_description=title,
@@ -293,7 +299,7 @@ def _extract_contract_info(root: etree._Element) -> Optional[ContractModel]:
         cpv_codes=cpv_codes,
         nuts_code=first_text(nuts_elem),
         contract_nature_code=first_text(nature_elem),
-        procedure_type_code=first_text(proc_elem),
+        procedure_type=procedure_type,
     )
 
 

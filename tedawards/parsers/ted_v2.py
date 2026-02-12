@@ -22,6 +22,7 @@ from ..schema import (
     ContractingBodyModel,
     ContractModel,
     CpvCodeEntry,
+    ProcedureTypeEntry,
     AwardModel,
     ContractorModel,
 )
@@ -422,6 +423,16 @@ def _extract_contract_info_r207(root: etree._Element) -> Optional[ContractModel]
                 )
             )
 
+    procedure_code = elem_attr(procedure_elem, "CODE")
+    procedure_type = None
+    if procedure_code:
+        procedure_description = elem_text(procedure_elem)
+        if procedure_description:
+            procedure_description = procedure_description.strip()
+        procedure_type = ProcedureTypeEntry(
+            code=procedure_code, description=procedure_description or None
+        )
+
     return ContractModel(
         title=element_text(title_elem) or "",
         short_description=element_text(description_elem),
@@ -429,7 +440,7 @@ def _extract_contract_info_r207(root: etree._Element) -> Optional[ContractModel]
         cpv_codes=cpv_codes,
         nuts_code=nuts_code,
         contract_nature_code=elem_attr(nature_elem, "CODE"),
-        procedure_type_code=elem_attr(procedure_elem, "CODE"),
+        procedure_type=procedure_type,
     )
 
 
@@ -475,6 +486,16 @@ def _extract_contract_info_r209(root: etree._Element) -> Optional[ContractModel]
                 )
             )
 
+    procedure_code = elem_attr(procedure_elem, "CODE")
+    procedure_type = None
+    if procedure_code:
+        procedure_description = elem_text(procedure_elem)
+        if procedure_description:
+            procedure_description = procedure_description.strip()
+        procedure_type = ProcedureTypeEntry(
+            code=procedure_code, description=procedure_description or None
+        )
+
     return ContractModel(
         title=element_text(title_elems[0]) if title_elems else "",
         short_description=(
@@ -486,7 +507,7 @@ def _extract_contract_info_r209(root: etree._Element) -> Optional[ContractModel]
         contract_nature_code=(
             type_contract_elems[0].get("CTYPE") if type_contract_elems else None
         ),
-        procedure_type_code=elem_attr(procedure_elem, "CODE"),
+        procedure_type=procedure_type,
     )
 
 

@@ -31,6 +31,7 @@ from tedawards.models import (
     Award,
     Contractor,
     CpvCode,
+    ProcedureType,
     award_contractors,
     contract_cpv_codes,
 )
@@ -40,6 +41,7 @@ from tedawards.schema import (
     ContractingBodyModel,
     ContractModel,
     CpvCodeEntry,
+    ProcedureTypeEntry,
     AwardModel,
     ContractorModel,
 )
@@ -661,6 +663,118 @@ class TestSaveDocument:
                 select(CpvCode).where(CpvCode.code == "45000000")
             ).scalar_one()
             assert cpv.description == "Construction work", (
+                "Description should be preserved when later doc has NULL"
+            )
+        finally:
+            session.close()
+
+    def test_procedure_type_lookup_table_deduplication(self, test_db):
+        """Test that same procedure type from two documents creates one lookup row."""
+        from tedawards.scraper import SessionLocal
+
+        award_data_1 = TedAwardDataModel(
+            document=DocumentModel(
+                doc_id="12345-2024",
+                publication_date=date(2024, 1, 1),
+                source_country="DE",
+            ),
+            contracting_body=ContractingBodyModel(
+                official_name="Body 1", country_code="DE"
+            ),
+            contract=ContractModel(
+                title="Contract 1",
+                procedure_type=ProcedureTypeEntry(
+                    code="1", description="Open procedure"
+                ),
+            ),
+            awards=[AwardModel(contractors=[])],
+        )
+
+        award_data_2 = TedAwardDataModel(
+            document=DocumentModel(
+                doc_id="67890-2024",
+                publication_date=date(2024, 1, 2),
+                source_country="FR",
+            ),
+            contracting_body=ContractingBodyModel(
+                official_name="Body 2", country_code="FR"
+            ),
+            contract=ContractModel(
+                title="Contract 2",
+                procedure_type=ProcedureTypeEntry(
+                    code="1", description="Open procedure"
+                ),
+            ),
+            awards=[AwardModel(contractors=[])],
+        )
+
+        save_document(award_data_1)
+        save_document(award_data_2)
+
+        session = SessionLocal()
+        try:
+            # Only one procedure type row (deduplicated)
+            pt_rows = session.execute(select(ProcedureType)).all()
+            assert len(pt_rows) == 1
+            assert pt_rows[0][0].code == "1"
+            assert pt_rows[0][0].description == "Open procedure"
+
+            # Both contracts reference the same procedure type
+            contracts = session.execute(select(Contract)).all()
+            assert len(contracts) == 2
+            for row in contracts:
+                assert row[0].procedure_type_code == "1"
+        finally:
+            session.close()
+
+    def test_procedure_type_description_preserved_when_null(self, test_db):
+        """Test that existing description is preserved when later doc has NULL description."""
+        from tedawards.scraper import SessionLocal
+
+        award_data_1 = TedAwardDataModel(
+            document=DocumentModel(
+                doc_id="12345-2024",
+                publication_date=date(2024, 1, 1),
+                source_country="DE",
+            ),
+            contracting_body=ContractingBodyModel(
+                official_name="Body 1", country_code="DE"
+            ),
+            contract=ContractModel(
+                title="Contract 1",
+                procedure_type=ProcedureTypeEntry(
+                    code="open", description="Open procedure"
+                ),
+            ),
+            awards=[AwardModel(contractors=[])],
+        )
+
+        # Second doc has NULL description (e.g. eForms)
+        award_data_2 = TedAwardDataModel(
+            document=DocumentModel(
+                doc_id="67890-2024",
+                publication_date=date(2024, 1, 2),
+                source_country="FR",
+            ),
+            contracting_body=ContractingBodyModel(
+                official_name="Body 2", country_code="FR"
+            ),
+            contract=ContractModel(
+                title="Contract 2",
+                procedure_type=ProcedureTypeEntry(code="open", description=None),
+            ),
+            awards=[AwardModel(contractors=[])],
+        )
+
+        save_document(award_data_1)
+        save_document(award_data_2)
+
+        session = SessionLocal()
+        try:
+            pt = session.execute(
+                select(ProcedureType).where(ProcedureType.code == "open")
+            ).scalar_one()
+            assert pt.description == "Open procedure", (
                 "Description should be preserved when later doc has NULL"
             )
         finally:

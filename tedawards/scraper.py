@@ -19,6 +19,7 @@ from .models import (
     Award,
     Contractor,
     CpvCode,
+    ProcedureType,
     award_contractors,
     contract_cpv_codes,
 )
@@ -190,6 +191,26 @@ def _upsert_cpv_code(session: Session, code: str, description: str | None) -> No
     session.execute(stmt)
 
 
+def _upsert_procedure_type(
+    session: Session, code: str, description: str | None
+) -> None:
+    """Upsert a procedure type. Preserves existing description if new one is NULL."""
+    stmt = (
+        insert(ProcedureType)
+        .values(code=code, description=description)
+        .on_conflict_do_update(
+            index_elements=["code"],
+            set_={
+                "description": func.coalesce(
+                    insert(ProcedureType).excluded.description,
+                    ProcedureType.description,
+                )
+            },
+        )
+    )
+    session.execute(stmt)
+
+
 def save_document(award_data: TedAwardDataModel) -> bool:
     """Save a single award document to database in its own transaction.
 
@@ -220,6 +241,16 @@ def save_document(award_data: TedAwardDataModel) -> bool:
         cpv_codes_data = contract_dict.pop("cpv_codes", [])
         for cpv_entry in cpv_codes_data:
             _upsert_cpv_code(session, cpv_entry["code"], cpv_entry["description"])
+
+        # Upsert procedure type into lookup table before creating contract (FK dependency)
+        procedure_type_data = contract_dict.pop("procedure_type", None)
+        if procedure_type_data:
+            _upsert_procedure_type(
+                session,
+                procedure_type_data["code"],
+                procedure_type_data["description"],
+            )
+            contract_dict["procedure_type_code"] = procedure_type_data["code"]
 
         # Create contract with main_cpv_code FK
         contract = Contract(

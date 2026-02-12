@@ -48,6 +48,13 @@ class CpvCodeEntry(BaseModel):
     description: Optional[str] = Field(None, description="CPV code description")
 
 
+class ProcedureTypeEntry(BaseModel):
+    """Procedure type entry."""
+
+    code: str = Field(..., description="Procedure type code")
+    description: Optional[str] = Field(None, description="Procedure type description")
+
+
 class ContractModel(BaseModel):
     """Contract model."""
 
@@ -63,7 +70,9 @@ class ContractModel(BaseModel):
     contract_nature_code: Optional[str] = Field(
         None, description="Contract nature code"
     )
-    procedure_type_code: Optional[str] = Field(None, description="Procedure type code")
+    procedure_type: Optional[ProcedureTypeEntry] = Field(
+        None, description="Procedure type"
+    )
 
 
 class ContractorModel(BaseModel):

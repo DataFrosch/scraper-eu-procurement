@@ -113,11 +113,12 @@ class TestTedV2R207Parser:
         assert award.awarded_value == 408000.00
         assert award.awarded_value_currency == "GBP"
 
-    def test_parse_r207_procedure_type_code(self):
-        """Test procedure_type_code extraction for R2.0.7."""
+    def test_parse_r207_procedure_type(self):
+        """Test procedure_type extraction for R2.0.7."""
         fixture_file = FIXTURES_DIR / "ted_v2_r2_0_7_2011.xml"
         result = ted_v2.parse_xml_file(fixture_file)
-        assert result[0].contract.procedure_type_code == "2"
+        assert result[0].contract.procedure_type.code == "2"
+        assert result[0].contract.procedure_type.description == "Restricted procedure"
 
     def test_parse_r207_cpv_codes(self):
         """Test CPV code extraction for R2.0.7: main + additional with descriptions."""
@@ -191,11 +192,12 @@ class TestTedV2R208Parser:
                     f"Contractor name should be present in {fixture_name}"
                 )
 
-    def test_parse_r208_procedure_type_code(self):
-        """Test procedure_type_code extraction for R2.0.8."""
+    def test_parse_r208_procedure_type(self):
+        """Test procedure_type extraction for R2.0.8."""
         fixture_file = FIXTURES_DIR / "ted_v2_r2_0_8_2015.xml"
         result = ted_v2.parse_xml_file(fixture_file)
-        assert result[0].contract.procedure_type_code == "1"
+        assert result[0].contract.procedure_type.code == "1"
+        assert result[0].contract.procedure_type.description == "Open procedure"
 
     def test_parse_r208_cpv_codes(self):
         """Test CPV code extraction for R2.0.8: main + additional with descriptions."""
@@ -264,8 +266,12 @@ class TestTedV2R209Parser:
         assert len(contract.cpv_codes) == 1, "Should have one CPV code"
         assert contract.cpv_codes[0].code == "38430000", "CPV code should match"
         assert contract.cpv_codes[0].description == "Detection and analysis apparatus"
-        assert contract.procedure_type_code == "T", (
+        assert contract.procedure_type.code == "T", (
             "Procedure type code should be T (negotiated w/o publication)"
+        )
+        assert (
+            contract.procedure_type.description
+            == "Negotiated without a prior call for competition"
         )
 
         # Validate awards

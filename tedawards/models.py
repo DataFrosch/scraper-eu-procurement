@@ -68,6 +68,15 @@ class CpvCode(Base):
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
 
+class ProcedureType(Base):
+    """Procedure type lookup table with code as natural primary key."""
+
+    __tablename__ = "procedure_types"
+
+    code: Mapped[str] = mapped_column(String, primary_key=True)
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+
 # Junction table for many-to-many relationship between contracts and CPV codes
 contract_cpv_codes = Table(
     "contract_cpv_codes",
@@ -184,7 +193,9 @@ class Contract(Base):
     )
     contract_nature_code: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     nuts_code: Mapped[Optional[str]] = mapped_column(String, nullable=True)
-    procedure_type_code: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    procedure_type_code: Mapped[Optional[str]] = mapped_column(
+        String, ForeignKey("procedure_types.code"), nullable=True
+    )
     # Relationships
     document: Mapped["TEDDocument"] = relationship(
         "TEDDocument", back_populates="contracts"
