@@ -123,7 +123,5 @@ For configuring what happens when users click chart elements, see [click-behavio
 
 - **Always use native SQL** for creating cards via API (MBQL is unstable across versions)
 - **Test queries first** with `POST /api/dataset` before saving as a card
-- **Pipe through `jq`** for readable output: `| jq '.id'` to extract IDs
-- **visualization_settings is largely undocumented** — to discover settings for a specific chart type, configure it in the Metabase UI and inspect the PUT request in browser dev tools
 - **POST /api/dataset returns max 2000 rows** — use `POST /api/dataset/:export-format` (json/csv/xlsx) for larger exports
 - **Always wire filters to cards**: When building a dashboard with filter parameters, every card that has a matching template tag must be connected to the filter via `parameter_mappings`. A filter widget that isn't mapped to cards does nothing. When adding cards to a dashboard that already has parameters, check each card's template tags and map all applicable filters.
