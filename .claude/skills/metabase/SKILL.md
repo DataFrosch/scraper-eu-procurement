@@ -67,6 +67,8 @@ All API calls go through `mb.sh` (handles auth from `.env` automatically):
 
 **IMPORTANT**: `PUT /api/dashboard/:id/cards` replaces ALL cards. To add to an existing dashboard, first `GET /api/dashboard/{id}`, include all existing `ordered_cards`, then add new ones with negative IDs.
 
+6. **Wire dashboard filters to cards** — whenever a dashboard has parameters and cards have matching template tags, connect them via `parameter_mappings` on each dashcard. See [filters.md](filters.md) for full details.
+
 ## Visualization settings
 
 For Metabase-specific `display` values and their `visualization_settings` JSON keys, see [visualization.md](visualization.md).
@@ -124,3 +126,4 @@ For configuring what happens when users click chart elements, see [click-behavio
 - **Pipe through `jq`** for readable output: `| jq '.id'` to extract IDs
 - **visualization_settings is largely undocumented** — to discover settings for a specific chart type, configure it in the Metabase UI and inspect the PUT request in browser dev tools
 - **POST /api/dataset returns max 2000 rows** — use `POST /api/dataset/:export-format` (json/csv/xlsx) for larger exports
+- **Always wire filters to cards**: When building a dashboard with filter parameters, every card that has a matching template tag must be connected to the filter via `parameter_mappings`. A filter widget that isn't mapped to cards does nothing. When adding cards to a dashboard that already has parameters, check each card's template tags and map all applicable filters.
