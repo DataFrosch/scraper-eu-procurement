@@ -63,6 +63,96 @@ _AUTHORITY_TYPE_DESCRIPTIONS: dict[str, str] = {
     "REGIONAL_AGENCY": "Regional or local agency/office",
 }
 
+# Mapping from old-style contract nature codes (R2.0.7/R2.0.8 NC_CONTRACT_NATURE CODE)
+# to canonical codes (R2.0.9 TYPE_CONTRACT CTYPE). Verified empirically from F03_2014
+# dual-code files containing both NC_CONTRACT_NATURE and TYPE_CONTRACT:
+# "1" -> WORKS (1,961 matches), "2" -> SUPPLIES (5,049), "4" -> SERVICES (6,226).
+_CONTRACT_NATURE_CODE_MAP: dict[str, str] = {
+    "1": "WORKS",
+    "2": "SUPPLIES",
+    "4": "SERVICES",
+}
+
+
+def _normalize_contract_nature_code(raw_code: Optional[str]) -> Optional[str]:
+    """Normalize a contract nature code to canonical R2.0.9 uppercase form.
+
+    Old-style numeric codes are mapped; eForms lowercase codes are uppercased.
+    Already-canonical codes pass through unchanged.
+    """
+    if raw_code is None:
+        return None
+
+    if raw_code in _CONTRACT_NATURE_CODE_MAP:
+        return _CONTRACT_NATURE_CODE_MAP[raw_code]
+
+    return raw_code.upper()
+
+
+# Mapping from old-style procedure type codes (R2.0.7/R2.0.8 PR_PROC CODE) to canonical
+# codes (R2.0.9 PT_* element names). Verified empirically from F03_2014 dual-code files.
+# Note: code "4" maps to different PT_* values depending on form type; for award notices
+# (Form 3 / F03_2014), the correct mapping is NEGOTIATED_WITH_COMPETITION.
+# Code "Z" ("Not specified") has no R2.0.9 equivalent, mapped to None (same as authority type).
+_PROCEDURE_TYPE_CODE_MAP: dict[str, str | None] = {
+    "1": "OPEN",
+    "2": "RESTRICTED",
+    "3": "ACCELERATED_RESTRICTED",
+    "4": "NEGOTIATED_WITH_COMPETITION",
+    "6": "ACCELERATED_NEGOTIATED",
+    "B": "COMPETITIVE_NEGOTIATION",
+    "C": "COMPETITIVE_DIALOGUE",
+    "G": "INNOVATION_PARTNERSHIP",
+    "T": "AWARD_CONTRACT_WITHOUT_CALL",
+    "V": "AWARD_CONTRACT_WITHOUT_CALL",
+    "Z": None,
+}
+
+# Human-readable descriptions for procedure type codes, from TED schema documentation
+_PROCEDURE_TYPE_DESCRIPTIONS: dict[str, str] = {
+    "OPEN": "Open procedure",
+    "RESTRICTED": "Restricted procedure",
+    "ACCELERATED_RESTRICTED": "Accelerated restricted procedure",
+    "NEGOTIATED_WITH_COMPETITION": "Negotiated with prior call for competition",
+    "ACCELERATED_NEGOTIATED": "Accelerated negotiated procedure",
+    "COMPETITIVE_NEGOTIATION": "Competitive procedure with negotiation",
+    "COMPETITIVE_DIALOGUE": "Competitive dialogue",
+    "INNOVATION_PARTNERSHIP": "Innovation partnership",
+    "AWARD_CONTRACT_WITHOUT_CALL": "Negotiated without a prior call for competition",
+}
+
+
+def _normalize_procedure_type(
+    raw_code: Optional[str], description: Optional[str]
+) -> Optional[ProcedureTypeEntry]:
+    """Convert a raw procedure type code to a normalized ProcedureTypeEntry.
+
+    For R2.0.9, raw_code is already canonical (e.g. "OPEN").
+    For R2.0.7/R2.0.8, raw_code is a numeric/letter code (e.g. "1") that
+    gets mapped to the canonical form.
+    For eForms, raw_code is lowercase (e.g. "open") and gets uppercased.
+    """
+    if raw_code is None:
+        return None
+
+    # Check if it's an old-style code that needs mapping
+    if raw_code in _PROCEDURE_TYPE_CODE_MAP:
+        canonical = _PROCEDURE_TYPE_CODE_MAP[raw_code]
+        if canonical is None:
+            return None
+        return ProcedureTypeEntry(
+            code=canonical,
+            description=_PROCEDURE_TYPE_DESCRIPTIONS.get(canonical),
+        )
+
+    # Uppercase for eForms compatibility, then use canonical description if available
+    code = raw_code.upper()
+    return ProcedureTypeEntry(
+        code=code,
+        description=description or _PROCEDURE_TYPE_DESCRIPTIONS.get(code),
+    )
+
+
 logger = logging.getLogger(__name__)
 
 
@@ -495,14 +585,12 @@ def _extract_contract_info_r207(root: etree._Element) -> Optional[ContractModel]
             )
 
     procedure_code = elem_attr(procedure_elem, "CODE")
-    procedure_type = None
-    if procedure_code:
-        procedure_description = elem_text(procedure_elem)
-        if procedure_description:
-            procedure_description = procedure_description.strip()
-        procedure_type = ProcedureTypeEntry(
-            code=procedure_code, description=procedure_description or None
-        )
+    procedure_description = elem_text(procedure_elem)
+    if procedure_description:
+        procedure_description = procedure_description.strip()
+    procedure_type = _normalize_procedure_type(
+        procedure_code, procedure_description or None
+    )
 
     return ContractModel(
         title=element_text(title_elem) or "",
@@ -510,7 +598,9 @@ def _extract_contract_info_r207(root: etree._Element) -> Optional[ContractModel]
         main_cpv_code=main_code,
         cpv_codes=cpv_codes,
         nuts_code=nuts_code,
-        contract_nature_code=elem_attr(nature_elem, "CODE"),
+        contract_nature_code=_normalize_contract_nature_code(
+            elem_attr(nature_elem, "CODE")
+        ),
         procedure_type=procedure_type,
     )
 
@@ -550,14 +640,12 @@ def _extract_contract_info_r209(root: etree._Element) -> Optional[ContractModel]
             )
 
     procedure_code = elem_attr(procedure_elem, "CODE")
-    procedure_type = None
-    if procedure_code:
-        procedure_description = elem_text(procedure_elem)
-        if procedure_description:
-            procedure_description = procedure_description.strip()
-        procedure_type = ProcedureTypeEntry(
-            code=procedure_code, description=procedure_description or None
-        )
+    procedure_description = elem_text(procedure_elem)
+    if procedure_description:
+        procedure_description = procedure_description.strip()
+    procedure_type = _normalize_procedure_type(
+        procedure_code, procedure_description or None
+    )
 
     return ContractModel(
         title=element_text(title_elem) or "",
@@ -565,7 +653,7 @@ def _extract_contract_info_r209(root: etree._Element) -> Optional[ContractModel]
         main_cpv_code=main_code,
         cpv_codes=cpv_codes,
         nuts_code=nuts_code,
-        contract_nature_code=(
+        contract_nature_code=_normalize_contract_nature_code(
             type_contract_elem.get("CTYPE") if type_contract_elem is not None else None
         ),
         procedure_type=procedure_type,

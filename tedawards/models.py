@@ -231,7 +231,6 @@ class Contract(Base):
         Index("idx_contracts_nuts", "nuts_code"),
         Index("idx_contracts_procedure", "procedure_type_code"),
         Index("idx_contracts_main_cpv", "main_cpv_code"),
-        Index("idx_contracts_nature", "contract_nature_code"),
     )
 
 

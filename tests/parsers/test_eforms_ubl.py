@@ -94,11 +94,11 @@ class TestEFormsUBLParser:
                 )
 
     def test_parse_eforms_procedure_type(self):
-        """Test procedure_type extraction for eForms (code only, no description)."""
+        """Test procedure_type extraction for eForms (normalized to uppercase)."""
         fixture_file = FIXTURES_DIR / "eforms_ubl_2025.xml"
         result = eforms_ubl.parse_xml_file(fixture_file)
-        assert result[0].contract.procedure_type.code == "open"
-        assert result[0].contract.procedure_type.description is None
+        assert result[0].contract.procedure_type.code == "OPEN"
+        assert result[0].contract.procedure_type.description == "Open procedure"
 
     def test_parse_eforms_cpv_codes_main_only(self):
         """Test CPV extraction for eForms with main code only (no additional)."""

@@ -20,10 +20,10 @@ from ..schema import (
     ContractingBodyModel,
     ContractModel,
     CpvCodeEntry,
-    ProcedureTypeEntry,
     AwardModel,
     ContractorModel,
 )
+from .ted_v2 import _normalize_contract_nature_code, _normalize_procedure_type
 from .xml import first_text
 
 
@@ -298,9 +298,7 @@ def _extract_contract_info(root: etree._Element) -> Optional[ContractModel]:
             cpv_codes.append(CpvCodeEntry(code=additional_code.strip()))
 
     proc_code = first_text(proc_elem)
-    procedure_type = (
-        ProcedureTypeEntry(code=proc_code, description=None) if proc_code else None
-    )
+    procedure_type = _normalize_procedure_type(proc_code, None)
 
     return ContractModel(
         title=title,
@@ -308,7 +306,7 @@ def _extract_contract_info(root: etree._Element) -> Optional[ContractModel]:
         main_cpv_code=main_code,
         cpv_codes=cpv_codes,
         nuts_code=first_text(nuts_elem),
-        contract_nature_code=first_text(nature_elem),
+        contract_nature_code=_normalize_contract_nature_code(first_text(nature_elem)),
         procedure_type=procedure_type,
     )
 
