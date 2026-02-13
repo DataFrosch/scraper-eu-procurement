@@ -105,6 +105,7 @@ _PROCEDURE_TYPE_CODE_MAP: dict[str, str | None] = {
     "G": "INNOVATION_PARTNERSHIP",
     "T": "AWARD_CONTRACT_WITHOUT_CALL",
     "V": "AWARD_CONTRACT_WITHOUT_CALL",
+    "N": None,
     "Z": None,
 }
 
