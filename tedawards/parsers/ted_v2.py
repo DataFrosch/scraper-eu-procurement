@@ -29,8 +29,6 @@ from ..schema import (
 )
 from .monetary import parse_monetary_value
 from .xml import (
-    first_text,
-    first_attr,
     elem_text,
     elem_attr,
     element_text,
@@ -66,6 +64,12 @@ _AUTHORITY_TYPE_DESCRIPTIONS: dict[str, str] = {
 }
 
 logger = logging.getLogger(__name__)
+
+
+def _default_ns(elem: etree._Element) -> str:
+    """Get the default namespace wrapped in braces for use in find/findall."""
+    ns = elem.nsmap.get(None)
+    return f"{{{ns}}}" if ns else ""
 
 
 def _parse_date_yyyymmdd(text: Optional[str]) -> Optional[date]:
@@ -195,6 +199,8 @@ def _extract_document_info(
     root: etree._Element, xml_file: Path, variant: str
 ) -> Optional[DocumentModel]:
     """Extract document-level information."""
+    ns = _default_ns(root)
+
     # Extract document ID from DOC_ID attribute or filename
     doc_id = root.get("DOC_ID")
     if not doc_id:
@@ -207,35 +213,31 @@ def _extract_document_info(
         return None
 
     # Extract publication date (required)
-    pub_date_elems = root.xpath('.//*[local-name()="DATE_PUB"]')
-    if not pub_date_elems or not pub_date_elems[0].text:
+    pub_date_elem = root.find(f".//{ns}DATE_PUB")
+    if pub_date_elem is None or not pub_date_elem.text:
         logger.debug(f"No publication date found in {xml_file.name}")
         return None
 
-    pub_date = _parse_date_yyyymmdd(pub_date_elems[0].text)
+    pub_date = _parse_date_yyyymmdd(pub_date_elem.text)
     if pub_date is None:
         logger.debug(f"Could not parse publication date in {xml_file.name}")
         return None
 
     # Extract dispatch date (optional)
-    dispatch_date_elems = root.xpath('.//*[local-name()="DS_DATE_DISPATCH"]')
+    dispatch_date_elem = root.find(f".//{ns}DS_DATE_DISPATCH")
     dispatch_date = None
-    if dispatch_date_elems and dispatch_date_elems[0].text:
-        dispatch_date = _parse_date_yyyymmdd(dispatch_date_elems[0].text)
+    if dispatch_date_elem is not None and dispatch_date_elem.text:
+        dispatch_date = _parse_date_yyyymmdd(dispatch_date_elem.text)
 
     # Extract other document metadata
-    reception_id_elems = root.xpath('.//*[local-name()="RECEPTION_ID"]')
-    no_doc_oj_elems = root.xpath('.//*[local-name()="NO_DOC_OJS"]')
-    country_elems = root.xpath('.//*[local-name()="ISO_COUNTRY"]')
-
     return DocumentModel(
         doc_id=doc_id,
         edition=edition,
         publication_date=pub_date,
         dispatch_date=dispatch_date,
-        reception_id=first_text(reception_id_elems),
-        official_journal_ref=first_text(no_doc_oj_elems),
-        source_country=first_attr(country_elems, "VALUE"),
+        reception_id=elem_text(root.find(f".//{ns}RECEPTION_ID")),
+        official_journal_ref=elem_text(root.find(f".//{ns}NO_DOC_OJS")),
+        source_country=elem_attr(root.find(f".//{ns}ISO_COUNTRY"), "VALUE"),
         version=variant,
     )
 
@@ -373,53 +375,37 @@ def _extract_contracting_body_r209(
 
     Returns (contracting_body, contact_fields_dict).
     """
-    ca_elems = root.xpath(
-        './/*[local-name()="F03_2014"]//*[local-name()="CONTRACTING_BODY"]'
-    )
-    if not ca_elems:
+    ns = _default_ns(root)
+    ca_elem = root.find(f".//{ns}F03_2014//{ns}CONTRACTING_BODY")
+    if ca_elem is None:
         return None, {}
 
-    ca_elem = ca_elems[0]
-
-    name_elems = ca_elem.xpath('.//*[local-name()="OFFICIALNAME"]')
-    address_elems = ca_elem.xpath('.//*[local-name()="ADDRESS"]')
-    town_elems = ca_elem.xpath('.//*[local-name()="TOWN"]')
-    postal_code_elems = ca_elem.xpath('.//*[local-name()="POSTAL_CODE"]')
-    country_elems = ca_elem.xpath('.//*[local-name()="COUNTRY"]')
-    contact_elems = ca_elem.xpath('.//*[local-name()="CONTACT_POINT"]')
-    phone_elems = ca_elem.xpath('.//*[local-name()="PHONE"]')
-    email_elems = ca_elem.xpath('.//*[local-name()="E_MAIL"]')
-    url_general_elems = ca_elem.xpath('.//*[local-name()="URL_GENERAL"]')
-    url_buyer_elems = ca_elem.xpath('.//*[local-name()="URL_BUYER"]')
-    authority_type_elems = ca_elem.xpath('.//*[local-name()="CA_TYPE"]')
-    activity_elems = ca_elem.xpath('.//*[local-name()="CA_ACTIVITY"]')
-
     # NUTS code from ADDRESS_CONTRACTING_BODY
-    addr_cb_elems = ca_elem.xpath('.//*[local-name()="ADDRESS_CONTRACTING_BODY"]')
+    addr_cb_elem = ca_elem.find(f".//{ns}ADDRESS_CONTRACTING_BODY")
     nuts_code = None
-    if addr_cb_elems:
-        nuts_elems = addr_cb_elems[0].xpath('.//*[local-name()="NUTS"]')
-        nuts_code = nuts_elems[0].get("CODE") if nuts_elems else None
+    if addr_cb_elem is not None:
+        nuts_elem = addr_cb_elem.find(".//{*}NUTS")
+        nuts_code = nuts_elem.get("CODE") if nuts_elem is not None else None
 
     contact_fields = {
-        "contact_point": first_text(contact_elems),
-        "phone": first_text(phone_elems),
-        "email": first_text(email_elems),
-        "url_general": first_text(url_general_elems),
-        "url_buyer": first_text(url_buyer_elems),
+        "contact_point": elem_text(ca_elem.find(f".//{ns}CONTACT_POINT")),
+        "phone": elem_text(ca_elem.find(f".//{ns}PHONE")),
+        "email": elem_text(ca_elem.find(f".//{ns}E_MAIL")),
+        "url_general": elem_text(ca_elem.find(f".//{ns}URL_GENERAL")),
+        "url_buyer": elem_text(ca_elem.find(f".//{ns}URL_BUYER")),
     }
 
     cb = ContractingBodyModel(
-        official_name=first_text(name_elems) or "",
-        address=first_text(address_elems),
-        town=first_text(town_elems),
-        postal_code=first_text(postal_code_elems),
-        country_code=first_attr(country_elems, "VALUE"),
+        official_name=elem_text(ca_elem.find(f".//{ns}OFFICIALNAME")) or "",
+        address=elem_text(ca_elem.find(f".//{ns}ADDRESS")),
+        town=elem_text(ca_elem.find(f".//{ns}TOWN")),
+        postal_code=elem_text(ca_elem.find(f".//{ns}POSTAL_CODE")),
+        country_code=elem_attr(ca_elem.find(f".//{ns}COUNTRY"), "VALUE"),
         nuts_code=nuts_code,
         authority_type=_make_authority_type_entry(
-            first_attr(authority_type_elems, "VALUE")
+            elem_attr(ca_elem.find(f".//{ns}CA_TYPE"), "VALUE")
         ),
-        main_activity_code=first_attr(activity_elems, "VALUE"),
+        main_activity_code=elem_attr(ca_elem.find(f".//{ns}CA_ACTIVITY"), "VALUE"),
     )
 
     return cb, contact_fields
@@ -437,9 +423,9 @@ def _extract_contract_info(
 
 def _build_cpv_description_map(root: etree._Element) -> dict[str, str]:
     """Build a map of CPV code -> description from CODED_DATA_SECTION/ORIGINAL_CPV."""
+    ns = _default_ns(root)
     desc_map = {}
-    original_cpv_elems = root.xpath('.//*[local-name()="ORIGINAL_CPV"]')
-    for elem in original_cpv_elems:
+    for elem in root.iter(f"{ns}ORIGINAL_CPV"):
         code = elem.get("CODE")
         text = elem.text
         if code and text:
@@ -531,38 +517,30 @@ def _extract_contract_info_r207(root: etree._Element) -> Optional[ContractModel]
 
 def _extract_contract_info_r209(root: etree._Element) -> Optional[ContractModel]:
     """Extract contract info for R2.0.9 format."""
-    object_elems = root.xpath(
-        './/*[local-name()="F03_2014"]//*[local-name()="OBJECT_CONTRACT"]'
-    )
-    if not object_elems:
+    ns = _default_ns(root)
+    object_elem = root.find(f".//{ns}F03_2014//{ns}OBJECT_CONTRACT")
+    if object_elem is None:
         return None
 
-    object_elem = object_elems[0]
-
-    title_elems = object_elem.xpath('.//*[local-name()="TITLE"]')
-    description_elems = object_elem.xpath('.//*[local-name()="SHORT_DESCR"]')
-    cpv_main_elems = object_elem.xpath(
-        './/*[local-name()="CPV_MAIN"]//*[local-name()="CPV_CODE"]'
-    )
-    type_contract_elems = object_elem.xpath('.//*[local-name()="TYPE_CONTRACT"]')
+    title_elem = object_elem.find(f".//{ns}TITLE")
+    description_elem = object_elem.find(f".//{ns}SHORT_DESCR")
+    cpv_main_elem = object_elem.find(f".//{ns}CPV_MAIN//{ns}CPV_CODE")
+    type_contract_elem = object_elem.find(f".//{ns}TYPE_CONTRACT")
 
     # Procedure type from CODED_DATA_SECTION (same location as R2.0.7/R2.0.8)
-    procedure_elems = root.xpath('.//*[local-name()="PR_PROC"]')
-    procedure_elem = procedure_elems[0] if procedure_elems else None
+    procedure_elem = root.find(f".//{ns}PR_PROC")
 
     # Performance location NUTS from OBJECT_DESCR
-    nuts_elems = object_elem.xpath(
-        './/*[local-name()="OBJECT_DESCR"]//*[local-name()="NUTS"]'
-    )
-    nuts_code = nuts_elems[0].get("CODE") if nuts_elems else None
+    nuts_elem = object_elem.find(f".//{ns}OBJECT_DESCR//{{*}}NUTS")
+    nuts_code = nuts_elem.get("CODE") if nuts_elem is not None else None
 
     # Build CPV codes list with descriptions
     cpv_desc_map = _build_cpv_description_map(root)
     cpv_codes: list[CpvCodeEntry] = []
 
     main_code = None
-    if cpv_main_elems:
-        main_code = cpv_main_elems[0].get("CODE")
+    if cpv_main_elem is not None:
+        main_code = cpv_main_elem.get("CODE")
         if main_code:
             cpv_codes.append(
                 CpvCodeEntry(
@@ -582,15 +560,13 @@ def _extract_contract_info_r209(root: etree._Element) -> Optional[ContractModel]
         )
 
     return ContractModel(
-        title=element_text(title_elems[0]) if title_elems else "",
-        short_description=(
-            element_text(description_elems[0]) if description_elems else None
-        ),
+        title=element_text(title_elem) or "",
+        short_description=element_text(description_elem),
         main_cpv_code=main_code,
         cpv_codes=cpv_codes,
         nuts_code=nuts_code,
         contract_nature_code=(
-            type_contract_elems[0].get("CTYPE") if type_contract_elems else None
+            type_contract_elem.get("CTYPE") if type_contract_elem is not None else None
         ),
         procedure_type=procedure_type,
     )
@@ -662,41 +638,29 @@ def _extract_awards_r207(root: etree._Element) -> List[AwardModel]:
 
 def _extract_awards_r209(root: etree._Element) -> List[AwardModel]:
     """Extract awards for R2.0.9 format."""
+    ns = _default_ns(root)
     awards = []
 
-    award_elems = root.xpath(
-        './/*[local-name()="F03_2014"]//*[local-name()="AWARD_CONTRACT"]'
-    )
-
-    for award_elem in award_elems:
-        contract_number_elems = award_elem.xpath('.//*[local-name()="CONTRACT_NO"]')
-        title_elems = award_elem.xpath('.//*[local-name()="TITLE"]')
-
-        award_decision_elems = award_elem.xpath('.//*[local-name()="AWARDED_CONTRACT"]')
-        if not award_decision_elems:
+    for award_elem in root.findall(f".//{ns}F03_2014//{ns}AWARD_CONTRACT"):
+        award_decision_elem = award_elem.find(f".//{ns}AWARDED_CONTRACT")
+        if award_decision_elem is None:
             continue
 
-        award_decision_elem = award_decision_elems[0]
-
-        value_elems = award_decision_elem.xpath('.//*[local-name()="VAL_TOTAL"]')
-        offers_elems = award_decision_elem.xpath(
-            './/*[local-name()="NB_TENDERS_RECEIVED"]'
-        )
+        value_elem = award_decision_elem.find(f".//{ns}VAL_TOTAL")
+        offers_elem = award_decision_elem.find(f".//{ns}NB_TENDERS_RECEIVED")
 
         contractors = _extract_contractors_r209(award_decision_elem)
 
         awards.append(
             AwardModel(
-                contract_number=first_text(contract_number_elems),
-                award_title=element_text(title_elems[0]) if title_elems else None,
-                awarded_value=(
-                    _extract_value_amount(value_elems[0]) if value_elems else None
-                ),
+                contract_number=elem_text(award_elem.find(f".//{ns}CONTRACT_NO")),
+                award_title=element_text(award_elem.find(f".//{ns}TITLE")),
+                awarded_value=_extract_value_amount(value_elem),
                 awarded_value_currency=(
-                    value_elems[0].get("CURRENCY") if value_elems else None
+                    value_elem.get("CURRENCY") if value_elem is not None else None
                 ),
                 tenders_received=_parse_optional_int(
-                    offers_elems[0].text if offers_elems else None,
+                    offers_elem.text if offers_elem is not None else None,
                     "tenders_received",
                 ),
                 contractors=contractors,
@@ -764,26 +728,23 @@ def _extract_contractors_r207(award_elem: etree._Element) -> List[ContractorMode
 
 def _extract_contractors_r209(award_elem: etree._Element) -> List[ContractorModel]:
     """Extract contractor information for R2.0.9."""
+    ns = _default_ns(award_elem)
     contractors = []
 
-    contractor_elems = award_elem.xpath('.//*[local-name()="CONTRACTOR"]')
-
-    for contractor_elem in contractor_elems:
-        name_elems = contractor_elem.xpath('.//*[local-name()="OFFICIALNAME"]')
-        address_elems = contractor_elem.xpath('.//*[local-name()="ADDRESS"]')
-        town_elems = contractor_elem.xpath('.//*[local-name()="TOWN"]')
-        postal_code_elems = contractor_elem.xpath('.//*[local-name()="POSTAL_CODE"]')
-        country_elems = contractor_elem.xpath('.//*[local-name()="COUNTRY"]')
-        nuts_elems = contractor_elem.xpath('.//*[local-name()="NUTS"]')
+    for contractor_elem in award_elem.findall(f".//{ns}CONTRACTOR"):
+        nuts_elem = contractor_elem.find(".//{*}NUTS")
 
         contractors.append(
             ContractorModel(
-                official_name=first_text(name_elems) or "",
-                address=first_text(address_elems),
-                town=first_text(town_elems),
-                postal_code=first_text(postal_code_elems),
-                country_code=first_attr(country_elems, "VALUE"),
-                nuts_code=nuts_elems[0].get("CODE") if nuts_elems else None,
+                official_name=elem_text(contractor_elem.find(f".//{ns}OFFICIALNAME"))
+                or "",
+                address=elem_text(contractor_elem.find(f".//{ns}ADDRESS")),
+                town=elem_text(contractor_elem.find(f".//{ns}TOWN")),
+                postal_code=elem_text(contractor_elem.find(f".//{ns}POSTAL_CODE")),
+                country_code=elem_attr(
+                    contractor_elem.find(f".//{ns}COUNTRY"), "VALUE"
+                ),
+                nuts_code=nuts_elem.get("CODE") if nuts_elem is not None else None,
             )
         )
 

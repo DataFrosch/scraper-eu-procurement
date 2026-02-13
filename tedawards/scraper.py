@@ -238,8 +238,10 @@ def _save_document_core(session: Session, award_data: TedAwardDataModel) -> bool
     # Upsert CPV codes into lookup table before creating contract (FK dependency)
     contract_dict = award_data.contract.model_dump()
     cpv_codes_data = contract_dict.pop("cpv_codes", [])
-    for cpv_entry in cpv_codes_data:
-        session.execute(_upsert_cpv, cpv_entry)
+    if cpv_codes_data:
+        # Deduplicate by code — PG upsert can't affect the same row twice in one statement
+        cpv_codes_data = list({e["code"]: e for e in cpv_codes_data}.values())
+        session.execute(_upsert_cpv, cpv_codes_data)
 
     # Upsert procedure type into lookup table before creating contract (FK dependency)
     procedure_type_data = contract_dict.pop("procedure_type", None)
@@ -252,12 +254,15 @@ def _save_document_core(session: Session, award_data: TedAwardDataModel) -> bool
     contract_id = session.execute(_insert_contract, contract_dict).scalar_one()
 
     # Link all CPV codes to contract
-    for code in {e["code"] for e in cpv_codes_data}:
-        session.execute(
-            _insert_cpv_junc, {"contract_id": contract_id, "cpv_code": code}
-        )
+    cpv_junc_params = [
+        {"contract_id": contract_id, "cpv_code": code}
+        for code in {e["code"] for e in cpv_codes_data}
+    ]
+    if cpv_junc_params:
+        session.execute(_insert_cpv_junc, cpv_junc_params)
 
     # Create awards with contractor upserts
+    all_award_ct_params = []
     for award_item in award_data.awards:
         award_dict = award_item.model_dump()
         contractors_data = award_dict.pop("contractors", [])
@@ -271,9 +276,12 @@ def _save_document_core(session: Session, award_data: TedAwardDataModel) -> bool
             session.execute(_upsert_ct, c).scalar_one() for c in contractors_data
         }
         for contractor_id in contractor_ids:
-            session.execute(
-                _insert_award_ct, {"award_id": award_id, "contractor_id": contractor_id}
+            all_award_ct_params.append(
+                {"award_id": award_id, "contractor_id": contractor_id}
             )
+
+    if all_award_ct_params:
+        session.execute(_insert_award_ct, all_award_ct_params)
 
     return True
 
