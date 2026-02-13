@@ -25,13 +25,7 @@ from sqlalchemy.orm import (
     Mapped,
     mapped_column,
     relationship,
-    validates,
 )
-
-
-def _normalize_country_code(value: Optional[str]) -> Optional[str]:
-    """Normalize country codes to uppercase (ISO standard)."""
-    return value.upper() if value else value
 
 
 class Base(DeclarativeBase):
@@ -177,10 +171,6 @@ class TEDDocument(Base):
         Index("idx_ted_documents_pub_date", "publication_date"),
         Index("idx_ted_documents_country", "source_country"),
     )
-
-    @validates("source_country")
-    def validate_source_country(self, key, value):
-        return _normalize_country_code(value)
 
 
 class Contract(Base):
