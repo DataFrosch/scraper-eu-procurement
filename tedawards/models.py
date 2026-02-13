@@ -10,6 +10,7 @@ from typing import List, Optional
 
 from sqlalchemy import (
     Column,
+    DDL,
     Date,
     ForeignKey,
     Integer,
@@ -19,6 +20,8 @@ from sqlalchemy import (
     Text,
     Index,
     UniqueConstraint,
+    event,
+    text,
 )
 from sqlalchemy.orm import (
     DeclarativeBase,
@@ -32,6 +35,13 @@ class Base(DeclarativeBase):
     """Base class for all models."""
 
     pass
+
+
+event.listen(
+    Base.metadata,
+    "before_create",
+    DDL("CREATE EXTENSION IF NOT EXISTS pg_trgm"),
+)
 
 
 # Junction table for many-to-many relationship between awards and contractors
@@ -50,6 +60,7 @@ award_contractors = Table(
         ForeignKey("contractors.id"),
         primary_key=True,
     ),
+    Index("idx_award_contractors_contractor", "contractor_id"),
 )
 
 
@@ -96,6 +107,7 @@ contract_cpv_codes = Table(
         ForeignKey("cpv_codes.code"),
         primary_key=True,
     ),
+    Index("idx_contract_cpv_codes_cpv", "cpv_code"),
 )
 
 
@@ -135,6 +147,12 @@ class ContractingBody(Base):
         ),
         Index("idx_contracting_body_country", "country_code"),
         Index("idx_contracting_body_nuts", "nuts_code"),
+        Index(
+            "idx_contracting_body_name_trgm",
+            "official_name",
+            postgresql_using="gin",
+            postgresql_ops={"official_name": "gin_trgm_ops"},
+        ),
     )
 
 
@@ -169,7 +187,12 @@ class TEDDocument(Base):
 
     __table_args__ = (
         Index("idx_ted_documents_pub_date", "publication_date"),
+        Index(
+            "idx_ted_documents_pub_year",
+            text("extract(year from publication_date)"),
+        ),
         Index("idx_ted_documents_country", "source_country"),
+        Index("idx_ted_documents_cb", "contracting_body_id"),
     )
 
 
@@ -206,6 +229,9 @@ class Contract(Base):
     __table_args__ = (
         Index("idx_contract_document", "ted_doc_id"),
         Index("idx_contracts_nuts", "nuts_code"),
+        Index("idx_contracts_procedure", "procedure_type_code"),
+        Index("idx_contracts_main_cpv", "main_cpv_code"),
+        Index("idx_contracts_nature", "contract_nature_code"),
     )
 
 
@@ -231,7 +257,12 @@ class Award(Base):
         "Contractor", secondary=award_contractors, back_populates="awards"
     )
 
-    __table_args__ = (Index("idx_award_contract", "contract_id"),)
+    __table_args__ = (
+        Index("idx_award_contract", "contract_id"),
+        Index("idx_awards_tenders_received", "tenders_received"),
+        Index("idx_awards_currency", "awarded_value_currency"),
+        Index("idx_awards_value", "awarded_value"),
+    )
 
 
 class Contractor(Base):
@@ -264,4 +295,10 @@ class Contractor(Base):
         ),
         Index("idx_contractors_country", "country_code"),
         Index("idx_contractors_nuts", "nuts_code"),
+        Index(
+            "idx_contractors_name_trgm",
+            "official_name",
+            postgresql_using="gin",
+            postgresql_ops={"official_name": "gin_trgm_ops"},
+        ),
     )
