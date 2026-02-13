@@ -1,6 +1,6 @@
 """Tests for float_comma_decimal parser."""
 
-from tedawards.parsers.monetary.float_comma_decimal import parse_float_comma_decimal
+from tedawards.parsers.monetary import parse_float_comma_decimal
 
 
 class TestParseFloatCommaDecimal:

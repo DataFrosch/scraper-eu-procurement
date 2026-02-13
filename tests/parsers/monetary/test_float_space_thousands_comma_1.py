@@ -1,8 +1,6 @@
 """Tests for float_space_thousands_comma_1 parser."""
 
-from tedawards.parsers.monetary.float_space_thousands_comma_1 import (
-    parse_float_space_thousands_comma_1,
-)
+from tedawards.parsers.monetary import parse_float_space_thousands_comma_1
 
 
 class TestParseFloatSpaceThousandsComma1:

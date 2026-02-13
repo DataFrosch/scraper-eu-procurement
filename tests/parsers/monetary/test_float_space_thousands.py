@@ -1,6 +1,6 @@
 """Tests for float_space_thousands parser."""
 
-from tedawards.parsers.monetary.float_space_thousands import parse_float_space_thousands
+from tedawards.parsers.monetary import parse_float_space_thousands
 
 
 class TestParseFloatSpaceThousands:

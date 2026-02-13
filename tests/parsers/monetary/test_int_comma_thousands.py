@@ -1,6 +1,6 @@
 """Tests for int_comma_thousands parser."""
 
-from tedawards.parsers.monetary.int_comma_thousands import parse_int_comma_thousands
+from tedawards.parsers.monetary import parse_int_comma_thousands
 
 
 class TestParseIntCommaThousands:

@@ -1,8 +1,6 @@
 """Tests for float_doublespace_thousands parser."""
 
-from tedawards.parsers.monetary.float_doublespace_thousands import (
-    parse_float_doublespace_thousands,
-)
+from tedawards.parsers.monetary import parse_float_doublespace_thousands
 
 
 class TestParseFloatDoublespaceThousands:
