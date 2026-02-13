@@ -130,10 +130,13 @@ def parse_xml_file(xml_file: Path) -> Optional[List[TedAwardDataModel]]:
         if not document:
             return None
 
-        contracting_body = _extract_contracting_body(root, variant)
+        contracting_body, contact_fields = _extract_contracting_body(root, variant)
         if not contracting_body:
             logger.debug(f"No contracting body found in {xml_file.name}")
             return None
+
+        # Add contact fields to document
+        document = document.model_copy(update=contact_fields)
 
         contract = _extract_contract_info(root, variant)
         if not contract:
@@ -268,8 +271,12 @@ def _make_authority_type_entry(
 
 def _extract_contracting_body(
     root: etree._Element, variant: str
-) -> Optional[ContractingBodyModel]:
-    """Extract contracting body information based on variant."""
+) -> tuple[Optional[ContractingBodyModel], dict]:
+    """Extract contracting body information based on variant.
+
+    Returns a tuple of (contracting_body, contact_fields_dict).
+    Contact fields belong on the document, not the contracting body.
+    """
     if variant == "R2.0.9":
         return _extract_contracting_body_r209(root)
     else:
@@ -278,13 +285,16 @@ def _extract_contracting_body(
 
 def _extract_contracting_body_r207(
     root: etree._Element,
-) -> Optional[ContractingBodyModel]:
-    """Extract contracting body for R2.0.7/R2.0.8 formats."""
+) -> tuple[Optional[ContractingBodyModel], dict]:
+    """Extract contracting body for R2.0.7/R2.0.8 formats.
+
+    Returns (contracting_body, contact_fields_dict).
+    """
     ca_elem = root.find(
         ".//{http://publications.europa.eu/TED_schema/Export}CA_CE_CONCESSIONAIRE_PROFILE"
     )
     if ca_elem is None:
-        return None
+        return None, {}
 
     # Extract organization name - handle both R2.0.7 and R2.0.8 structures
     org_elem = ca_elem.find(
@@ -333,34 +343,41 @@ def _extract_contracting_body_r207(
         ".//{http://publications.europa.eu/TED_schema/Export}MA_MAIN_ACTIVITIES"
     )
 
-    return ContractingBodyModel(
+    contact_fields = {
+        "phone": elem_text(phone_elem),
+        "email": elem_text(email_elem),
+        "url_general": elem_text(url_general_elem),
+        "url_buyer": elem_text(url_buyer_elem),
+    }
+
+    cb = ContractingBodyModel(
         official_name=official_name,
         address=elem_text(address_elem),
         town=elem_text(town_elem),
         postal_code=elem_text(postal_code_elem),
         country_code=elem_attr(country_elem, "VALUE"),
         nuts_code=None,
-        contact_point=None,
-        phone=elem_text(phone_elem),
-        email=elem_text(email_elem),
-        url_general=elem_text(url_general_elem),
-        url_buyer=elem_text(url_buyer_elem),
         authority_type=_make_authority_type_entry(
             elem_attr(authority_type_elem, "CODE")
         ),
         main_activity_code=elem_attr(activity_elem, "CODE"),
     )
 
+    return cb, contact_fields
+
 
 def _extract_contracting_body_r209(
     root: etree._Element,
-) -> Optional[ContractingBodyModel]:
-    """Extract contracting body for R2.0.9 format."""
+) -> tuple[Optional[ContractingBodyModel], dict]:
+    """Extract contracting body for R2.0.9 format.
+
+    Returns (contracting_body, contact_fields_dict).
+    """
     ca_elems = root.xpath(
         './/*[local-name()="F03_2014"]//*[local-name()="CONTRACTING_BODY"]'
     )
     if not ca_elems:
-        return None
+        return None, {}
 
     ca_elem = ca_elems[0]
 
@@ -384,23 +401,28 @@ def _extract_contracting_body_r209(
         nuts_elems = addr_cb_elems[0].xpath('.//*[local-name()="NUTS"]')
         nuts_code = nuts_elems[0].get("CODE") if nuts_elems else None
 
-    return ContractingBodyModel(
+    contact_fields = {
+        "contact_point": first_text(contact_elems),
+        "phone": first_text(phone_elems),
+        "email": first_text(email_elems),
+        "url_general": first_text(url_general_elems),
+        "url_buyer": first_text(url_buyer_elems),
+    }
+
+    cb = ContractingBodyModel(
         official_name=first_text(name_elems) or "",
         address=first_text(address_elems),
         town=first_text(town_elems),
         postal_code=first_text(postal_code_elems),
         country_code=first_attr(country_elems, "VALUE"),
         nuts_code=nuts_code,
-        contact_point=first_text(contact_elems),
-        phone=first_text(phone_elems),
-        email=first_text(email_elems),
-        url_general=first_text(url_general_elems),
-        url_buyer=first_text(url_buyer_elems),
         authority_type=_make_authority_type_entry(
             first_attr(authority_type_elems, "VALUE")
         ),
         main_activity_code=first_attr(activity_elems, "VALUE"),
     )
+
+    return cb, contact_fields
 
 
 def _extract_contract_info(

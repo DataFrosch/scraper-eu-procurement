@@ -21,6 +21,11 @@ class DocumentModel(BaseModel):
     publication_date: Optional[date] = Field(None, description="Publication date")
     dispatch_date: Optional[date] = Field(None, description="Dispatch date")
     source_country: Optional[str] = Field(None, description="Source country code")
+    contact_point: Optional[str] = Field(None, description="Contact point")
+    phone: Optional[str] = Field(None, description="Phone number")
+    email: Optional[str] = Field(None, description="Email address")
+    url_general: Optional[str] = Field(None, description="General URL")
+    url_buyer: Optional[str] = Field(None, description="Buyer profile URL")
 
 
 class AuthorityTypeEntry(BaseModel):
@@ -39,11 +44,6 @@ class ContractingBodyModel(BaseModel):
     postal_code: Optional[str] = Field(None, description="Postal code")
     country_code: Optional[str] = Field(None, description="Country code")
     nuts_code: Optional[str] = Field(None, description="NUTS region code")
-    contact_point: Optional[str] = Field(None, description="Contact point")
-    phone: Optional[str] = Field(None, description="Phone number")
-    email: Optional[str] = Field(None, description="Email address")
-    url_general: Optional[str] = Field(None, description="General URL")
-    url_buyer: Optional[str] = Field(None, description="Buyer profile URL")
     authority_type: Optional[AuthorityTypeEntry] = Field(
         None, description="Authority type"
     )

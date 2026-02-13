@@ -117,11 +117,6 @@ class ContractingBody(Base):
     postal_code: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     country_code: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     nuts_code: Mapped[Optional[str]] = mapped_column(String, nullable=True)
-    phone: Mapped[Optional[str]] = mapped_column(String, nullable=True)
-    email: Mapped[Optional[str]] = mapped_column(String, nullable=True)
-    url_general: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    url_buyer: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    contact_point: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     authority_type_code: Mapped[Optional[str]] = mapped_column(
         String, ForeignKey("authority_types.code"), nullable=True
     )
@@ -139,11 +134,6 @@ class ContractingBody(Base):
             "postal_code",
             "country_code",
             "nuts_code",
-            "contact_point",
-            "phone",
-            "email",
-            "url_general",
-            "url_buyer",
             "authority_type_code",
             "main_activity_code",
             name="uq_contracting_body_identity",
@@ -167,6 +157,11 @@ class TEDDocument(Base):
     publication_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
     dispatch_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
     source_country: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    contact_point: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    phone: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    email: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    url_general: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    url_buyer: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     contracting_body_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("contracting_bodies.id"), nullable=False
     )

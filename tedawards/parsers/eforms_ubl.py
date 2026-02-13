@@ -78,10 +78,13 @@ def parse_xml_file(xml_file: Path) -> Optional[List[TedAwardDataModel]]:
         if not document:
             return None
 
-        contracting_body = _extract_contracting_body(root)
+        contracting_body, contact_fields = _extract_contracting_body(root)
         if not contracting_body:
             logger.debug(f"No contracting body found in {xml_file.name}")
             return None
+
+        # Add contact fields to document
+        document = document.model_copy(update=contact_fields)
 
         contract = _extract_contract_info(root)
         if not contract:
@@ -155,8 +158,14 @@ def _extract_document_info(
     )
 
 
-def _extract_contracting_body(root: etree._Element) -> Optional[ContractingBodyModel]:
-    """Extract contracting body information from eForms UBL."""
+def _extract_contracting_body(
+    root: etree._Element,
+) -> tuple[Optional[ContractingBodyModel], dict]:
+    """Extract contracting body information from eForms UBL.
+
+    Returns (contracting_body, contact_fields_dict).
+    Contact fields belong on the document, not the contracting body.
+    """
     # Find the contracting party organization ID
     contracting_party_id_elem = root.xpath(
         ".//cac:ContractingParty/cac:Party/cac:PartyIdentification/cbc:ID",
@@ -168,7 +177,7 @@ def _extract_contracting_body(root: etree._Element) -> Optional[ContractingBodyM
         else None
     )
 
-    contracting_body = None
+    company_elem = None
 
     if not contracting_party_id:
         # Fallback to first organization
@@ -176,7 +185,7 @@ def _extract_contracting_body(root: etree._Element) -> Optional[ContractingBodyM
             ".//efac:Organizations/efac:Organization", namespaces=NAMESPACES
         )
         if orgs:
-            contracting_body = orgs[0].find(".//efac:Company", NAMESPACES)
+            company_elem = orgs[0].find(".//efac:Company", NAMESPACES)
     else:
         # Find the organization with matching ID
         orgs = root.xpath(
@@ -192,54 +201,55 @@ def _extract_contracting_body(root: etree._Element) -> Optional[ContractingBodyM
                     org_id_elem[0].text if org_id_elem and org_id_elem[0].text else None
                 )
                 if org_id == contracting_party_id:
-                    contracting_body = company
+                    company_elem = company
                     break
 
-    if contracting_body is None:
-        return None
+    if company_elem is None:
+        return None, {}
 
-    name_elem = contracting_body.xpath(
-        ".//cac:PartyName/cbc:Name", namespaces=NAMESPACES
-    )
-    address_elem = contracting_body.xpath(
+    name_elem = company_elem.xpath(".//cac:PartyName/cbc:Name", namespaces=NAMESPACES)
+    address_elem = company_elem.xpath(
         ".//cac:PostalAddress/cbc:StreetName", namespaces=NAMESPACES
     )
-    town_elem = contracting_body.xpath(
+    town_elem = company_elem.xpath(
         ".//cac:PostalAddress/cbc:CityName", namespaces=NAMESPACES
     )
-    postal_elem = contracting_body.xpath(
+    postal_elem = company_elem.xpath(
         ".//cac:PostalAddress/cbc:PostalZone", namespaces=NAMESPACES
     )
-    country_elem = contracting_body.xpath(
+    country_elem = company_elem.xpath(
         ".//cac:PostalAddress/cac:Country/cbc:IdentificationCode",
         namespaces=NAMESPACES,
     )
-    phone_elem = contracting_body.xpath(
+    phone_elem = company_elem.xpath(
         ".//cac:Contact/cbc:Telephone", namespaces=NAMESPACES
     )
-    email_elem = contracting_body.xpath(
+    email_elem = company_elem.xpath(
         ".//cac:Contact/cbc:ElectronicMail", namespaces=NAMESPACES
     )
-    url_elem = contracting_body.xpath(".//cbc:WebsiteURI", namespaces=NAMESPACES)
-    nuts_elem = contracting_body.xpath(
+    url_elem = company_elem.xpath(".//cbc:WebsiteURI", namespaces=NAMESPACES)
+    nuts_elem = company_elem.xpath(
         ".//cac:PostalAddress/cbc:CountrySubentityCode", namespaces=NAMESPACES
     )
 
-    return ContractingBodyModel(
+    contact_fields = {
+        "phone": first_text(phone_elem),
+        "email": first_text(email_elem),
+        "url_general": first_text(url_elem),
+    }
+
+    cb = ContractingBodyModel(
         official_name=first_text(name_elem) or "",
         address=first_text(address_elem),
         town=first_text(town_elem),
         postal_code=first_text(postal_elem),
         country_code=first_text(country_elem),
         nuts_code=first_text(nuts_elem),
-        contact_point=None,
-        phone=first_text(phone_elem),
-        email=first_text(email_elem),
-        url_general=first_text(url_elem),
-        url_buyer=None,
         authority_type=None,
         main_activity_code=None,
     )
+
+    return cb, contact_fields
 
 
 def _extract_contract_info(root: etree._Element) -> Optional[ContractModel]:
