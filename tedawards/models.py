@@ -260,8 +260,6 @@ class Award(Base):
     __table_args__ = (
         Index("idx_award_contract", "contract_id"),
         Index("idx_awards_tenders_received", "tenders_received"),
-        Index("idx_awards_currency", "awarded_value_currency"),
-        Index("idx_awards_value", "awarded_value"),
     )
 
 
