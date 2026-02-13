@@ -6,8 +6,7 @@ from pathlib import Path
 from typing import List, Optional
 from contextlib import contextmanager
 from dotenv import load_dotenv
-from sqlalchemy import create_engine, func, select
-from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy import create_engine, select
 from sqlalchemy.orm import sessionmaker, Session
 
 from .parsers import try_parse_award
@@ -143,95 +142,6 @@ def _normalize_country_code(value: str | None) -> str | None:
     return value.upper() if value else value
 
 
-def _upsert_contracting_body(session: Session, cb_data: dict) -> int:
-    """Upsert a contracting body and return its id."""
-    cb_data["country_code"] = _normalize_country_code(cb_data.get("country_code"))
-    stmt = (
-        insert(ContractingBody)
-        .values(**cb_data)
-        .on_conflict_do_update(
-            constraint="uq_contracting_body_identity",
-            set_={"official_name": insert(ContractingBody).excluded.official_name},
-        )
-        .returning(ContractingBody.id)
-    )
-    return session.execute(stmt).scalar_one()
-
-
-def _upsert_contractor(session: Session, contractor_data: dict) -> int:
-    """Upsert a contractor and return its id."""
-    contractor_data["country_code"] = _normalize_country_code(
-        contractor_data.get("country_code")
-    )
-    stmt = (
-        insert(Contractor)
-        .values(**contractor_data)
-        .on_conflict_do_update(
-            constraint="uq_contractor_identity",
-            set_={"official_name": insert(Contractor).excluded.official_name},
-        )
-        .returning(Contractor.id)
-    )
-    return session.execute(stmt).scalar_one()
-
-
-def _upsert_cpv_code(session: Session, code: str, description: str | None) -> None:
-    """Upsert a CPV code. Preserves existing description if new one is NULL."""
-    stmt = (
-        insert(CpvCode)
-        .values(code=code, description=description)
-        .on_conflict_do_update(
-            index_elements=["code"],
-            set_={
-                "description": func.coalesce(
-                    insert(CpvCode).excluded.description, CpvCode.description
-                )
-            },
-        )
-    )
-    session.execute(stmt)
-
-
-def _upsert_procedure_type(
-    session: Session, code: str, description: str | None
-) -> None:
-    """Upsert a procedure type. Preserves existing description if new one is NULL."""
-    stmt = (
-        insert(ProcedureType)
-        .values(code=code, description=description)
-        .on_conflict_do_update(
-            index_elements=["code"],
-            set_={
-                "description": func.coalesce(
-                    insert(ProcedureType).excluded.description,
-                    ProcedureType.description,
-                )
-            },
-        )
-    )
-    session.execute(stmt)
-
-
-def _upsert_authority_type(
-    session: Session, code: str, description: str | None
-) -> None:
-    """Upsert an authority type. Preserves existing description if new one is NULL."""
-    stmt = (
-        insert(AuthorityType)
-        .values(code=code, description=description)
-        .on_conflict_do_update(
-            index_elements=["code"],
-            set_={
-                "description": func.coalesce(
-                    insert(AuthorityType).excluded.description,
-                    AuthorityType.description,
-                )
-            },
-        )
-    )
-    session.execute(stmt)
-
-
 def save_document(award_data: TedAwardDataModel) -> bool:
     """Save a single award document to database in its own transaction.
 
@@ -251,15 +161,12 @@ def save_document(award_data: TedAwardDataModel) -> bool:
         cb_dict = award_data.contracting_body.model_dump()
         authority_type_data = cb_dict.pop("authority_type", None)
         if authority_type_data:
-            _upsert_authority_type(
-                session,
-                authority_type_data["code"],
-                authority_type_data["description"],
-            )
+            AuthorityType.upsert(session, authority_type_data)
             cb_dict["authority_type_code"] = authority_type_data["code"]
 
         # Upsert contracting body
-        cb_id = _upsert_contracting_body(session, cb_dict)
+        cb_dict["country_code"] = _normalize_country_code(cb_dict.get("country_code"))
+        cb_id = ContractingBody.upsert(session, cb_dict)
 
         # Create document with FK to contracting body
         doc = TEDDocument(**award_data.document.model_dump(), contracting_body_id=cb_id)
@@ -270,16 +177,12 @@ def save_document(award_data: TedAwardDataModel) -> bool:
         contract_dict = award_data.contract.model_dump()
         cpv_codes_data = contract_dict.pop("cpv_codes", [])
         for cpv_entry in cpv_codes_data:
-            _upsert_cpv_code(session, cpv_entry["code"], cpv_entry["description"])
+            CpvCode.upsert(session, cpv_entry)
 
         # Upsert procedure type into lookup table before creating contract (FK dependency)
         procedure_type_data = contract_dict.pop("procedure_type", None)
         if procedure_type_data:
-            _upsert_procedure_type(
-                session,
-                procedure_type_data["code"],
-                procedure_type_data["description"],
-            )
+            ProcedureType.upsert(session, procedure_type_data)
             contract_dict["procedure_type_code"] = procedure_type_data["code"]
 
         # Create contract with main_cpv_code FK
@@ -308,7 +211,9 @@ def save_document(award_data: TedAwardDataModel) -> bool:
             session.add(award)
             session.flush()
 
-            contractor_ids = {_upsert_contractor(session, c) for c in contractors_data}
+            for c in contractors_data:
+                c["country_code"] = _normalize_country_code(c.get("country_code"))
+            contractor_ids = {Contractor.upsert(session, c) for c in contractors_data}
             for contractor_id in contractor_ids:
                 session.execute(
                     award_contractors.insert().values(

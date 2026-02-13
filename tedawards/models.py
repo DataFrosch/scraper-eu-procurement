@@ -6,7 +6,7 @@ with exact-match deduplication via composite unique constraints.
 
 from datetime import date
 from decimal import Decimal
-from typing import List, Optional
+from typing import ClassVar, List, Optional
 
 from sqlalchemy import (
     Column,
@@ -19,10 +19,13 @@ from sqlalchemy import (
     Text,
     Index,
     UniqueConstraint,
+    func,
 )
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import (
     DeclarativeBase,
     Mapped,
+    Session,
     mapped_column,
     relationship,
     validates,
@@ -38,6 +41,44 @@ class Base(DeclarativeBase):
     """Base class for all models."""
 
     pass
+
+
+class UpsertMixin:
+    """Mixin for models that support upsert (INSERT ... ON CONFLICT DO UPDATE).
+
+    Subclasses declare their conflict target and update behavior, then call
+    Model.upsert(session, values_dict) instead of hand-written upsert functions.
+    """
+
+    __upsert_constraint__: ClassVar[str | None] = None
+    __upsert_index_elements__: ClassVar[list[str] | None] = None
+    __upsert_returning__: ClassVar[str | None] = None
+
+    @classmethod
+    def _upsert_set(cls, excluded):
+        """Return the set_ dict for ON CONFLICT DO UPDATE SET."""
+        raise NotImplementedError
+
+    @classmethod
+    def upsert(cls, session: Session, values: dict) -> int | None:
+        """Insert or update a row. Returns the returning column value, or None."""
+        conflict = {}
+        if cls.__upsert_constraint__:
+            conflict["constraint"] = cls.__upsert_constraint__
+        else:
+            conflict["index_elements"] = cls.__upsert_index_elements__
+
+        stmt = pg_insert(cls).values(**values)
+        stmt = stmt.on_conflict_do_update(
+            **conflict, set_=cls._upsert_set(stmt.excluded)
+        )
+
+        if cls.__upsert_returning__:
+            stmt = stmt.returning(getattr(cls, cls.__upsert_returning__))
+            return session.execute(stmt).scalar_one()
+
+        session.execute(stmt)
+        return None
 
 
 # Junction table for many-to-many relationship between awards and contractors
@@ -59,31 +100,46 @@ award_contractors = Table(
 )
 
 
-class CpvCode(Base):
+class CpvCode(UpsertMixin, Base):
     """CPV code lookup table with code as natural primary key."""
 
     __tablename__ = "cpv_codes"
+    __upsert_index_elements__: ClassVar[list[str]] = ["code"]
 
     code: Mapped[str] = mapped_column(String, primary_key=True)
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
+    @classmethod
+    def _upsert_set(cls, excluded):
+        return {"description": func.coalesce(excluded.description, cls.description)}
 
-class ProcedureType(Base):
+
+class ProcedureType(UpsertMixin, Base):
     """Procedure type lookup table with code as natural primary key."""
 
     __tablename__ = "procedure_types"
+    __upsert_index_elements__: ClassVar[list[str]] = ["code"]
 
     code: Mapped[str] = mapped_column(String, primary_key=True)
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
+    @classmethod
+    def _upsert_set(cls, excluded):
+        return {"description": func.coalesce(excluded.description, cls.description)}
 
-class AuthorityType(Base):
+
+class AuthorityType(UpsertMixin, Base):
     """Authority type lookup table with code as natural primary key."""
 
     __tablename__ = "authority_types"
+    __upsert_index_elements__: ClassVar[list[str]] = ["code"]
 
     code: Mapped[str] = mapped_column(String, primary_key=True)
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    @classmethod
+    def _upsert_set(cls, excluded):
+        return {"description": func.coalesce(excluded.description, cls.description)}
 
 
 # Junction table for many-to-many relationship between contracts and CPV codes
@@ -105,10 +161,12 @@ contract_cpv_codes = Table(
 )
 
 
-class ContractingBody(Base):
+class ContractingBody(UpsertMixin, Base):
     """Shared contracting body lookup table (exact-match deduplication)."""
 
     __tablename__ = "contracting_bodies"
+    __upsert_constraint__: ClassVar[str] = "uq_contracting_body_identity"
+    __upsert_returning__: ClassVar[str] = "id"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     official_name: Mapped[str] = mapped_column(Text, nullable=False)
@@ -142,6 +200,10 @@ class ContractingBody(Base):
         Index("idx_contracting_body_country", "country_code"),
         Index("idx_contracting_body_nuts", "nuts_code"),
     )
+
+    @classmethod
+    def _upsert_set(cls, excluded):
+        return {"official_name": excluded.official_name}
 
 
 class TEDDocument(Base):
@@ -244,10 +306,12 @@ class Award(Base):
     __table_args__ = (Index("idx_award_contract", "contract_id"),)
 
 
-class Contractor(Base):
+class Contractor(UpsertMixin, Base):
     """Shared contractor lookup table (exact-match deduplication)."""
 
     __tablename__ = "contractors"
+    __upsert_constraint__: ClassVar[str] = "uq_contractor_identity"
+    __upsert_returning__: ClassVar[str] = "id"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     official_name: Mapped[str] = mapped_column(Text, nullable=False)
@@ -275,3 +339,7 @@ class Contractor(Base):
         Index("idx_contractors_country", "country_code"),
         Index("idx_contractors_nuts", "nuts_code"),
     )
+
+    @classmethod
+    def _upsert_set(cls, excluded):
+        return {"official_name": excluded.official_name}
