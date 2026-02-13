@@ -1035,7 +1035,7 @@ class TestImportYear:
 
         imported_packages = []
 
-        def mock_import(package_num, data_dir):
+        def mock_import(package_num, data_dir, executor=None):
             imported_packages.append(package_num)
             return 0
 

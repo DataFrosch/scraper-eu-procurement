@@ -2,6 +2,7 @@ import logging
 import os
 import requests
 import tarfile
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import List, Optional
 from contextlib import contextmanager
@@ -356,14 +357,21 @@ def get_downloaded_packages(year: int, data_dir: Path = DATA_DIR) -> List[int]:
     return sorted(packages)
 
 
-def import_package(package_number: int, data_dir: Path = DATA_DIR) -> int:
+def import_package(
+    package_number: int,
+    data_dir: Path = DATA_DIR,
+    executor: Optional[ThreadPoolExecutor] = None,
+) -> int:
     """Import awards from a single downloaded package.
 
     All documents are saved in a single transaction per package.
+    Parsing is done in the provided thread pool executor while
+    database saving runs sequentially on the calling thread.
 
     Args:
         package_number: TED package number (yyyynnnnn format)
         data_dir: Directory where packages are stored
+        executor: Thread pool for parallel XML parsing (created if None)
 
     Returns:
         Number of award notices imported
@@ -375,15 +383,24 @@ def import_package(package_number: int, data_dir: Path = DATA_DIR) -> int:
 
     xml_files = [f for f in files if f.suffix.lower() == ".xml"]
 
-    count = 0
-    with get_session() as session:
-        for file_path in xml_files:
-            awards = try_parse_award(file_path)
-            if not awards:
-                continue
-            for award_data in awards:
-                if _save_document_core(session, award_data):
-                    count += 1
+    own_executor = executor is None
+    if own_executor:
+        executor = ThreadPoolExecutor()
+
+    try:
+        parsed = executor.map(try_parse_award, xml_files)
+
+        count = 0
+        with get_session() as session:
+            for awards in parsed:
+                if not awards:
+                    continue
+                for award_data in awards:
+                    if _save_document_core(session, award_data):
+                        count += 1
+    finally:
+        if own_executor:
+            executor.shutdown(wait=False)
 
     if count:
         logger.info(f"Package {package_number:09d}: Imported {count} award notices")
@@ -407,7 +424,8 @@ def import_year(year: int, data_dir: Path = DATA_DIR):
     logger.info(f"Importing {len(packages)} packages for year {year}")
 
     total_imported = 0
-    for package_number in packages:
-        total_imported += import_package(package_number, data_dir)
+    with ThreadPoolExecutor() as executor:
+        for package_number in packages:
+            total_imported += import_package(package_number, data_dir, executor)
 
     logger.info(f"Year {year}: Imported {total_imported} total award notices")
