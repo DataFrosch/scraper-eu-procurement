@@ -6,7 +6,8 @@ from pathlib import Path
 from typing import List, Optional
 from contextlib import contextmanager
 from dotenv import load_dotenv
-from sqlalchemy import create_engine, select
+from sqlalchemy import bindparam, create_engine, func, select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import sessionmaker, Session
 
 from .parsers import try_parse_award
@@ -40,6 +41,66 @@ SessionLocal = sessionmaker(bind=engine, expire_on_commit=False)
 # Data directory setup
 DATA_DIR = Path(os.getenv("TED_DATA_DIR", "./data"))
 DATA_DIR.mkdir(exist_ok=True)
+
+# --- Module-level Core statements (built once, reused with parameters) ---
+# The _ins variables must exist separately because .excluded must reference
+# the same pg_insert() object that on_conflict_do_update is called on.
+
+# Lookup table upserts (no RETURNING needed)
+_cpv_ins = pg_insert(CpvCode.__table__)
+_upsert_cpv = _cpv_ins.on_conflict_do_update(
+    index_elements=["code"],
+    set_={
+        "description": func.coalesce(
+            _cpv_ins.excluded.description, CpvCode.__table__.c.description
+        )
+    },
+)
+
+_pt_ins = pg_insert(ProcedureType.__table__)
+_upsert_pt = _pt_ins.on_conflict_do_update(
+    index_elements=["code"],
+    set_={
+        "description": func.coalesce(
+            _pt_ins.excluded.description, ProcedureType.__table__.c.description
+        )
+    },
+)
+
+_at_ins = pg_insert(AuthorityType.__table__)
+_upsert_at = _at_ins.on_conflict_do_update(
+    index_elements=["code"],
+    set_={
+        "description": func.coalesce(
+            _at_ins.excluded.description, AuthorityType.__table__.c.description
+        )
+    },
+)
+
+# Entity table upserts (RETURNING id)
+_cb_ins = pg_insert(ContractingBody.__table__)
+_upsert_cb = _cb_ins.on_conflict_do_update(
+    constraint="uq_contracting_body_identity",
+    set_={"official_name": _cb_ins.excluded.official_name},
+).returning(ContractingBody.__table__.c.id)
+
+_ct_ins = pg_insert(Contractor.__table__)
+_upsert_ct = _ct_ins.on_conflict_do_update(
+    constraint="uq_contractor_identity",
+    set_={"official_name": _ct_ins.excluded.official_name},
+).returning(Contractor.__table__.c.id)
+
+# Plain inserts
+_insert_doc = TEDDocument.__table__.insert()
+_insert_contract = Contract.__table__.insert().returning(Contract.__table__.c.id)
+_insert_award = Award.__table__.insert().returning(Award.__table__.c.id)
+_insert_cpv_junc = contract_cpv_codes.insert()
+_insert_award_ct = award_contractors.insert()
+
+# Doc existence check
+_check_doc = select(TEDDocument.__table__.c.doc_id).where(
+    TEDDocument.__table__.c.doc_id == bindparam("doc_id")
+)
 
 
 @contextmanager
@@ -142,86 +203,88 @@ def _normalize_country_code(value: str | None) -> str | None:
     return value.upper() if value else value
 
 
+def _save_document_core(session: Session, award_data: TedAwardDataModel) -> bool:
+    """Save a single award document using Core statements.
+
+    Operates within the caller's session/transaction — does not commit.
+    Returns True if saved, False if already exists.
+    """
+    doc_id = award_data.document.doc_id
+
+    existing = session.execute(_check_doc, {"doc_id": doc_id}).scalar_one_or_none()
+    if existing:
+        logger.debug(f"Document {doc_id} already imported, skipping")
+        return False
+
+    # Upsert authority type into lookup table before contracting body (FK dependency)
+    cb_dict = award_data.contracting_body.model_dump()
+    authority_type_data = cb_dict.pop("authority_type", None)
+    if authority_type_data:
+        session.execute(_upsert_at, authority_type_data)
+        cb_dict["authority_type_code"] = authority_type_data["code"]
+
+    # Upsert contracting body
+    cb_dict["country_code"] = _normalize_country_code(cb_dict.get("country_code"))
+    cb_id = session.execute(_upsert_cb, cb_dict).scalar_one()
+
+    # Create document with FK to contracting body
+    doc_params = award_data.document.model_dump()
+    doc_params["source_country"] = _normalize_country_code(
+        doc_params.get("source_country")
+    )
+    doc_params["contracting_body_id"] = cb_id
+    session.execute(_insert_doc, doc_params)
+
+    # Upsert CPV codes into lookup table before creating contract (FK dependency)
+    contract_dict = award_data.contract.model_dump()
+    cpv_codes_data = contract_dict.pop("cpv_codes", [])
+    for cpv_entry in cpv_codes_data:
+        session.execute(_upsert_cpv, cpv_entry)
+
+    # Upsert procedure type into lookup table before creating contract (FK dependency)
+    procedure_type_data = contract_dict.pop("procedure_type", None)
+    if procedure_type_data:
+        session.execute(_upsert_pt, procedure_type_data)
+        contract_dict["procedure_type_code"] = procedure_type_data["code"]
+
+    # Create contract
+    contract_dict["ted_doc_id"] = doc_id
+    contract_id = session.execute(_insert_contract, contract_dict).scalar_one()
+
+    # Link all CPV codes to contract
+    for code in {e["code"] for e in cpv_codes_data}:
+        session.execute(
+            _insert_cpv_junc, {"contract_id": contract_id, "cpv_code": code}
+        )
+
+    # Create awards with contractor upserts
+    for award_item in award_data.awards:
+        award_dict = award_item.model_dump()
+        contractors_data = award_dict.pop("contractors", [])
+
+        award_dict["contract_id"] = contract_id
+        award_id = session.execute(_insert_award, award_dict).scalar_one()
+
+        for c in contractors_data:
+            c["country_code"] = _normalize_country_code(c.get("country_code"))
+        contractor_ids = {
+            session.execute(_upsert_ct, c).scalar_one() for c in contractors_data
+        }
+        for contractor_id in contractor_ids:
+            session.execute(
+                _insert_award_ct, {"award_id": award_id, "contractor_id": contractor_id}
+            )
+
+    return True
+
+
 def save_document(award_data: TedAwardDataModel) -> bool:
     """Save a single award document to database in its own transaction.
 
     Returns True if saved, False if already exists.
     """
-    doc_id = award_data.document.doc_id
-
     with get_session() as session:
-        existing = session.execute(
-            select(TEDDocument.doc_id).where(TEDDocument.doc_id == doc_id)
-        ).scalar_one_or_none()
-        if existing:
-            logger.debug(f"Document {doc_id} already imported, skipping")
-            return False
-
-        # Upsert authority type into lookup table before contracting body (FK dependency)
-        cb_dict = award_data.contracting_body.model_dump()
-        authority_type_data = cb_dict.pop("authority_type", None)
-        if authority_type_data:
-            AuthorityType.upsert(session, authority_type_data)
-            cb_dict["authority_type_code"] = authority_type_data["code"]
-
-        # Upsert contracting body
-        cb_dict["country_code"] = _normalize_country_code(cb_dict.get("country_code"))
-        cb_id = ContractingBody.upsert(session, cb_dict)
-
-        # Create document with FK to contracting body
-        doc = TEDDocument(**award_data.document.model_dump(), contracting_body_id=cb_id)
-        session.add(doc)
-        session.flush()
-
-        # Upsert CPV codes into lookup table before creating contract (FK dependency)
-        contract_dict = award_data.contract.model_dump()
-        cpv_codes_data = contract_dict.pop("cpv_codes", [])
-        for cpv_entry in cpv_codes_data:
-            CpvCode.upsert(session, cpv_entry)
-
-        # Upsert procedure type into lookup table before creating contract (FK dependency)
-        procedure_type_data = contract_dict.pop("procedure_type", None)
-        if procedure_type_data:
-            ProcedureType.upsert(session, procedure_type_data)
-            contract_dict["procedure_type_code"] = procedure_type_data["code"]
-
-        # Create contract with main_cpv_code FK
-        contract = Contract(
-            **contract_dict,
-            ted_doc_id=doc.doc_id,
-        )
-        session.add(contract)
-        session.flush()
-
-        # Link all CPV codes to contract
-        for code in {e["code"] for e in cpv_codes_data}:
-            session.execute(
-                contract_cpv_codes.insert().values(
-                    contract_id=contract.id,
-                    cpv_code=code,
-                )
-            )
-
-        # Create awards with contractor upserts
-        for award_item in award_data.awards:
-            award_dict = award_item.model_dump()
-            contractors_data = award_dict.pop("contractors", [])
-
-            award = Award(**award_dict, contract_id=contract.id)
-            session.add(award)
-            session.flush()
-
-            for c in contractors_data:
-                c["country_code"] = _normalize_country_code(c.get("country_code"))
-            contractor_ids = {Contractor.upsert(session, c) for c in contractors_data}
-            for contractor_id in contractor_ids:
-                session.execute(
-                    award_contractors.insert().values(
-                        award_id=award.id, contractor_id=contractor_id
-                    )
-                )
-
-        return True
+        return _save_document_core(session, award_data)
 
 
 def download_year(year: int, max_issue: int = 300, data_dir: Path = DATA_DIR):
@@ -288,8 +351,7 @@ def get_downloaded_packages(year: int, data_dir: Path = DATA_DIR) -> List[int]:
 def import_package(package_number: int, data_dir: Path = DATA_DIR) -> int:
     """Import awards from a single downloaded package.
 
-    Each document is saved in its own transaction, so successfully imported
-    documents are preserved even if a later document fails.
+    All documents are saved in a single transaction per package.
 
     Args:
         package_number: TED package number (yyyynnnnn format)
@@ -306,13 +368,14 @@ def import_package(package_number: int, data_dir: Path = DATA_DIR) -> int:
     xml_files = [f for f in files if f.suffix.lower() == ".xml"]
 
     count = 0
-    for file_path in xml_files:
-        awards = try_parse_award(file_path)
-        if not awards:
-            continue
-        for award_data in awards:
-            if save_document(award_data):
-                count += 1
+    with get_session() as session:
+        for file_path in xml_files:
+            awards = try_parse_award(file_path)
+            if not awards:
+                continue
+            for award_data in awards:
+                if _save_document_core(session, award_data):
+                    count += 1
 
     if count:
         logger.info(f"Package {package_number:09d}: Imported {count} award notices")
