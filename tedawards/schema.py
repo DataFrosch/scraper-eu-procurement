@@ -23,6 +23,13 @@ class DocumentModel(BaseModel):
     source_country: Optional[str] = Field(None, description="Source country code")
 
 
+class AuthorityTypeEntry(BaseModel):
+    """Authority type entry."""
+
+    code: str = Field(..., description="Authority type code")
+    description: Optional[str] = Field(None, description="Authority type description")
+
+
 class ContractingBodyModel(BaseModel):
     """Contracting body model."""
 
@@ -37,7 +44,9 @@ class ContractingBodyModel(BaseModel):
     email: Optional[str] = Field(None, description="Email address")
     url_general: Optional[str] = Field(None, description="General URL")
     url_buyer: Optional[str] = Field(None, description="Buyer profile URL")
-    authority_type_code: Optional[str] = Field(None, description="Authority type code")
+    authority_type: Optional[AuthorityTypeEntry] = Field(
+        None, description="Authority type"
+    )
     main_activity_code: Optional[str] = Field(None, description="Main activity code")
 
 

@@ -120,6 +120,15 @@ class TestTedV2R207Parser:
         assert result[0].contract.procedure_type.code == "2"
         assert result[0].contract.procedure_type.description == "Restricted procedure"
 
+    def test_parse_r207_authority_type_normalized(self):
+        """Test authority type code is normalized from old '3' to 'REGIONAL_AUTHORITY'."""
+        fixture_file = FIXTURES_DIR / "ted_v2_r2_0_7_2011.xml"
+        result = ted_v2.parse_xml_file(fixture_file)
+        cb = result[0].contracting_body
+        assert cb.authority_type is not None
+        assert cb.authority_type.code == "REGIONAL_AUTHORITY"
+        assert cb.authority_type.description == "Regional or local authority"
+
     def test_parse_r207_cpv_codes(self):
         """Test CPV code extraction for R2.0.7: main + additional with descriptions."""
         fixture_file = FIXTURES_DIR / "ted_v2_r2_0_7_2011.xml"
@@ -199,6 +208,15 @@ class TestTedV2R208Parser:
         assert result[0].contract.procedure_type.code == "1"
         assert result[0].contract.procedure_type.description == "Open procedure"
 
+    def test_parse_r208_authority_type_normalized(self):
+        """Test authority type code is normalized from old '3' to 'REGIONAL_AUTHORITY'."""
+        fixture_file = FIXTURES_DIR / "ted_v2_r2_0_8_2015.xml"
+        result = ted_v2.parse_xml_file(fixture_file)
+        cb = result[0].contracting_body
+        assert cb.authority_type is not None
+        assert cb.authority_type.code == "REGIONAL_AUTHORITY"
+        assert cb.authority_type.description == "Regional or local authority"
+
     def test_parse_r208_cpv_codes(self):
         """Test CPV code extraction for R2.0.8: main + additional with descriptions."""
         fixture_file = FIXTURES_DIR / "ted_v2_r2_0_8_2015.xml"
@@ -251,6 +269,11 @@ class TestTedV2R209Parser:
         assert contracting_body.country_code == "AT", "Country code should be Austria"
         assert contracting_body.town == "Innsbruck", "Town should be Innsbruck"
         assert contracting_body.nuts_code == "AT332", "NUTS code should be AT332"
+        assert contracting_body.authority_type is not None
+        assert contracting_body.authority_type.code == "BODY_PUBLIC"
+        assert (
+            contracting_body.authority_type.description == "Body governed by public law"
+        )
 
         # Validate contract
         contract = award_data.contract

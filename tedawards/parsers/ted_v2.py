@@ -23,6 +23,7 @@ from ..schema import (
     ContractModel,
     CpvCodeEntry,
     ProcedureTypeEntry,
+    AuthorityTypeEntry,
     AwardModel,
     ContractorModel,
 )
@@ -34,6 +35,35 @@ from .xml import (
     elem_attr,
     element_text,
 )
+
+# Mapping from old-style authority type codes (R2.0.7/R2.0.8 CODED_DATA_SECTION)
+# to canonical codes (R2.0.9 CA_TYPE VALUE). Verified empirically: R2.0.9 XML files
+# contain both old and new codes, confirming these are exact 1:1 mappings.
+# Code 8 ("Other") maps ~99% to CA_TYPE_OTHER free-text and ~1% to EU_INSTITUTION
+# (international orgs shoehorned into "Other"). We map 8 -> OTHER since that's the
+# intent for the vast majority. Code Z ("Not specified") has no R2.0.9 equivalent;
+# R2.0.9 simply omits CA_TYPE, so we map it to None.
+_AUTHORITY_TYPE_CODE_MAP: dict[str, str | None] = {
+    "1": "MINISTRY",
+    "3": "REGIONAL_AUTHORITY",
+    "5": "EU_INSTITUTION",
+    "6": "BODY_PUBLIC",
+    "8": "OTHER",
+    "N": "NATIONAL_AGENCY",
+    "R": "REGIONAL_AGENCY",
+    "Z": None,
+}
+
+# Human-readable descriptions for authority type codes, from TED schema documentation
+_AUTHORITY_TYPE_DESCRIPTIONS: dict[str, str] = {
+    "MINISTRY": "Ministry or any other national or federal authority",
+    "REGIONAL_AUTHORITY": "Regional or local authority",
+    "EU_INSTITUTION": "European institution/agency or international organisation",
+    "BODY_PUBLIC": "Body governed by public law",
+    "OTHER": "Other type",
+    "NATIONAL_AGENCY": "National or federal agency/office",
+    "REGIONAL_AGENCY": "Regional or local agency/office",
+}
 
 logger = logging.getLogger(__name__)
 
@@ -207,6 +237,35 @@ def _extract_document_info(
     )
 
 
+def _make_authority_type_entry(
+    raw_code: Optional[str],
+) -> Optional[AuthorityTypeEntry]:
+    """Convert a raw authority type code to a normalized AuthorityTypeEntry.
+
+    For R2.0.9, raw_code is already canonical (e.g. "BODY_PUBLIC").
+    For R2.0.7/R2.0.8, raw_code is a numeric/letter code (e.g. "6") that
+    gets mapped to the canonical form.
+    """
+    if raw_code is None:
+        return None
+
+    # Check if it's an old-style code that needs mapping
+    if raw_code in _AUTHORITY_TYPE_CODE_MAP:
+        canonical = _AUTHORITY_TYPE_CODE_MAP[raw_code]
+        if canonical is None:
+            return None
+        return AuthorityTypeEntry(
+            code=canonical,
+            description=_AUTHORITY_TYPE_DESCRIPTIONS.get(canonical),
+        )
+
+    # Already a canonical code (R2.0.9)
+    return AuthorityTypeEntry(
+        code=raw_code,
+        description=_AUTHORITY_TYPE_DESCRIPTIONS.get(raw_code),
+    )
+
+
 def _extract_contracting_body(
     root: etree._Element, variant: str
 ) -> Optional[ContractingBodyModel]:
@@ -286,7 +345,9 @@ def _extract_contracting_body_r207(
         email=elem_text(email_elem),
         url_general=elem_text(url_general_elem),
         url_buyer=elem_text(url_buyer_elem),
-        authority_type_code=elem_attr(authority_type_elem, "CODE"),
+        authority_type=_make_authority_type_entry(
+            elem_attr(authority_type_elem, "CODE")
+        ),
         main_activity_code=elem_attr(activity_elem, "CODE"),
     )
 
@@ -335,7 +396,9 @@ def _extract_contracting_body_r209(
         email=first_text(email_elems),
         url_general=first_text(url_general_elems),
         url_buyer=first_text(url_buyer_elems),
-        authority_type_code=first_attr(authority_type_elems, "VALUE"),
+        authority_type=_make_authority_type_entry(
+            first_attr(authority_type_elems, "VALUE")
+        ),
         main_activity_code=first_attr(activity_elems, "VALUE"),
     )
 

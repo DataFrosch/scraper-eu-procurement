@@ -237,7 +237,7 @@ def _extract_contracting_body(root: etree._Element) -> Optional[ContractingBodyM
         email=first_text(email_elem),
         url_general=first_text(url_elem),
         url_buyer=None,
-        authority_type_code=None,
+        authority_type=None,
         main_activity_code=None,
     )
 

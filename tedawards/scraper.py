@@ -20,6 +20,7 @@ from .models import (
     Contractor,
     CpvCode,
     ProcedureType,
+    AuthorityType,
     award_contractors,
     contract_cpv_codes,
 )
@@ -211,6 +212,26 @@ def _upsert_procedure_type(
     session.execute(stmt)
 
 
+def _upsert_authority_type(
+    session: Session, code: str, description: str | None
+) -> None:
+    """Upsert an authority type. Preserves existing description if new one is NULL."""
+    stmt = (
+        insert(AuthorityType)
+        .values(code=code, description=description)
+        .on_conflict_do_update(
+            index_elements=["code"],
+            set_={
+                "description": func.coalesce(
+                    insert(AuthorityType).excluded.description,
+                    AuthorityType.description,
+                )
+            },
+        )
+    )
+    session.execute(stmt)
+
+
 def save_document(award_data: TedAwardDataModel) -> bool:
     """Save a single award document to database in its own transaction.
 
@@ -226,10 +247,19 @@ def save_document(award_data: TedAwardDataModel) -> bool:
             logger.debug(f"Document {doc_id} already imported, skipping")
             return False
 
+        # Upsert authority type into lookup table before contracting body (FK dependency)
+        cb_dict = award_data.contracting_body.model_dump()
+        authority_type_data = cb_dict.pop("authority_type", None)
+        if authority_type_data:
+            _upsert_authority_type(
+                session,
+                authority_type_data["code"],
+                authority_type_data["description"],
+            )
+            cb_dict["authority_type_code"] = authority_type_data["code"]
+
         # Upsert contracting body
-        cb_id = _upsert_contracting_body(
-            session, award_data.contracting_body.model_dump()
-        )
+        cb_id = _upsert_contracting_body(session, cb_dict)
 
         # Create document with FK to contracting body
         doc = TEDDocument(**award_data.document.model_dump(), contracting_body_id=cb_id)

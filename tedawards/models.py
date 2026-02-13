@@ -77,6 +77,15 @@ class ProcedureType(Base):
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
 
+class AuthorityType(Base):
+    """Authority type lookup table with code as natural primary key."""
+
+    __tablename__ = "authority_types"
+
+    code: Mapped[str] = mapped_column(String, primary_key=True)
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+
 # Junction table for many-to-many relationship between contracts and CPV codes
 contract_cpv_codes = Table(
     "contract_cpv_codes",
@@ -113,7 +122,9 @@ class ContractingBody(Base):
     url_general: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     url_buyer: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     contact_point: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    authority_type_code: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    authority_type_code: Mapped[Optional[str]] = mapped_column(
+        String, ForeignKey("authority_types.code"), nullable=True
+    )
     main_activity_code: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     # Relationships
     documents: Mapped[List["TEDDocument"]] = relationship(
