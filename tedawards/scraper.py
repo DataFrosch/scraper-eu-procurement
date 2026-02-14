@@ -14,6 +14,7 @@ from sqlalchemy.orm import sessionmaker, Session
 from sqlalchemy import text as sa_text
 
 from .parsers import try_parse_award
+from .countries import get_country_name
 from .models import (
     Base,
     TEDDocument,
@@ -24,6 +25,7 @@ from .models import (
     CpvCode,
     ProcedureType,
     AuthorityType,
+    Country,
     award_contractors,
     contract_cpv_codes,
 )
@@ -78,6 +80,12 @@ _upsert_at = _at_ins.on_conflict_do_update(
             _at_ins.excluded.description, AuthorityType.__table__.c.description
         )
     },
+)
+
+_country_ins = pg_insert(Country.__table__)
+_upsert_country = _country_ins.on_conflict_do_update(
+    index_elements=["code"],
+    set_={"name": func.coalesce(_country_ins.excluded.name, Country.__table__.c.name)},
 )
 
 # Entity table upserts (RETURNING id)
@@ -203,7 +211,14 @@ def get_package_files(
 
 
 def _normalize_country_code(value: str | None) -> str | None:
-    return value.upper() if value else value
+    if not value:
+        return None
+    code = value.upper()
+    if code == "UK":
+        return "GB"
+    if code == "1A":
+        return None
+    return code
 
 
 def _save_document_core(session: Session, award_data: TedAwardDataModel) -> bool:
@@ -226,15 +241,41 @@ def _save_document_core(session: Session, award_data: TedAwardDataModel) -> bool
         session.execute(_upsert_at, authority_type_data)
         cb_dict["authority_type_code"] = authority_type_data["code"]
 
-    # Upsert contracting body
+    # Normalize country codes
     cb_dict["country_code"] = _normalize_country_code(cb_dict.get("country_code"))
-    cb_id = session.execute(_upsert_cb, cb_dict).scalar_one()
-
-    # Create document with FK to contracting body
     doc_params = award_data.document.model_dump()
     doc_params["source_country"] = _normalize_country_code(
         doc_params.get("source_country")
     )
+
+    # Collect all contractor country codes (normalized) for batch upsert
+    all_contractor_dicts = []
+    for award_item in award_data.awards:
+        for c in award_item.contractors:
+            cd = c.model_dump()
+            cd["country_code"] = _normalize_country_code(cd.get("country_code"))
+            all_contractor_dicts.append(cd)
+
+    # Upsert all distinct country codes before entities (FK dependency)
+    country_codes = {
+        code
+        for code in [
+            cb_dict["country_code"],
+            doc_params["source_country"],
+            *(cd["country_code"] for cd in all_contractor_dicts),
+        ]
+        if code is not None
+    }
+    if country_codes:
+        session.execute(
+            _upsert_country,
+            [{"code": c, "name": get_country_name(c)} for c in country_codes],
+        )
+
+    # Upsert contracting body
+    cb_id = session.execute(_upsert_cb, cb_dict).scalar_one()
+
+    # Create document with FK to contracting body
     doc_params["contracting_body_id"] = cb_id
     session.execute(_insert_doc, doc_params)
 
@@ -264,17 +305,22 @@ def _save_document_core(session: Session, award_data: TedAwardDataModel) -> bool
     if cpv_junc_params:
         session.execute(_insert_cpv_junc, cpv_junc_params)
 
-    # Create awards with contractor upserts
+    # Create awards with contractor upserts (using pre-normalized dicts)
     all_award_ct_params = []
+    ct_offset = 0
     for award_item in award_data.awards:
         award_dict = award_item.model_dump()
-        contractors_data = award_dict.pop("contractors", [])
+        contractors_raw = award_dict.pop("contractors", [])
 
         award_dict["contract_id"] = contract_id
         award_id = session.execute(_insert_award, award_dict).scalar_one()
 
-        for c in contractors_data:
-            c["country_code"] = _normalize_country_code(c.get("country_code"))
+        # Slice pre-normalized contractor dicts for this award
+        contractors_data = all_contractor_dicts[
+            ct_offset : ct_offset + len(contractors_raw)
+        ]
+        ct_offset += len(contractors_raw)
+
         contractor_ids = {
             session.execute(_upsert_ct, c).scalar_one() for c in contractors_data
         }

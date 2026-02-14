@@ -301,12 +301,12 @@ class TestTedV2R209Parser:
         assert len(contract.cpv_codes) == 1, "Should have one CPV code"
         assert contract.cpv_codes[0].code == "38430000", "CPV code should match"
         assert contract.cpv_codes[0].description == "Detection and analysis apparatus"
-        assert contract.procedure_type.code == "AWARD_CONTRACT_WITHOUT_CALL", (
+        assert contract.procedure_type.code == "NEG_WO_CALL", (
             "Procedure type code should be normalized from T"
         )
         assert (
             contract.procedure_type.description
-            == "Negotiated without a prior call for competition"
+            == "Negotiated without prior call for competition"
         )
 
         # Validate awards

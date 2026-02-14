@@ -97,6 +97,15 @@ class AuthorityType(Base):
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
 
+class Country(Base):
+    """Country lookup table with ISO 3166-1 alpha-2 code as primary key."""
+
+    __tablename__ = "countries"
+
+    code: Mapped[str] = mapped_column(String, primary_key=True)
+    name: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+
 # Junction table for many-to-many relationship between contracts and CPV codes
 contract_cpv_codes = Table(
     "contract_cpv_codes",
@@ -127,7 +136,9 @@ class ContractingBody(Base):
     address: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     town: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     postal_code: Mapped[Optional[str]] = mapped_column(String, nullable=True)
-    country_code: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    country_code: Mapped[Optional[str]] = mapped_column(
+        String, ForeignKey("countries.code"), nullable=True
+    )
     nuts_code: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     authority_type_code: Mapped[Optional[str]] = mapped_column(
         String, ForeignKey("authority_types.code"), nullable=True
@@ -174,7 +185,9 @@ class TEDDocument(Base):
     official_journal_ref: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     publication_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
     dispatch_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
-    source_country: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    source_country: Mapped[Optional[str]] = mapped_column(
+        String, ForeignKey("countries.code"), nullable=True
+    )
     contact_point: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     phone: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     email: Mapped[Optional[str]] = mapped_column(String, nullable=True)
@@ -304,7 +317,9 @@ class Contractor(Base):
     address: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     town: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     postal_code: Mapped[Optional[str]] = mapped_column(String, nullable=True)
-    country_code: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    country_code: Mapped[Optional[str]] = mapped_column(
+        String, ForeignKey("countries.code"), nullable=True
+    )
     nuts_code: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     # Relationships
     awards: Mapped[List["Award"]] = relationship(

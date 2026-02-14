@@ -22,6 +22,7 @@ from tedawards.scraper import (
     get_package_number,
     download_year,
     import_year,
+    _normalize_country_code,
 )
 from tedawards.models import (
     Base,
@@ -31,6 +32,7 @@ from tedawards.models import (
     Award,
     Contractor,
     CpvCode,
+    Country,
     ProcedureType,
     award_contractors,
     contract_cpv_codes,
@@ -1043,3 +1045,203 @@ class TestImportYear:
             import_year(2024, temp_data_dir)
 
         assert imported_packages == [202400001, 202400002, 202400003]
+
+
+class TestNormalizeCountryCode:
+    """Tests for _normalize_country_code function."""
+
+    def test_uk_maps_to_gb(self):
+        assert _normalize_country_code("UK") == "GB"
+
+    def test_uk_lowercase_maps_to_gb(self):
+        assert _normalize_country_code("uk") == "GB"
+
+    def test_1a_maps_to_none(self):
+        assert _normalize_country_code("1A") is None
+
+    def test_empty_string_maps_to_none(self):
+        assert _normalize_country_code("") is None
+
+    def test_none_maps_to_none(self):
+        assert _normalize_country_code(None) is None
+
+    def test_normal_code_uppercased(self):
+        assert _normalize_country_code("de") == "DE"
+
+    def test_normal_code_preserved(self):
+        assert _normalize_country_code("FR") == "FR"
+
+
+class TestCountryLookupTable:
+    """Tests for country lookup table integration."""
+
+    def test_country_deduplication(self, test_db):
+        """Two docs with same country code → one countries row."""
+        from tedawards.scraper import SessionLocal
+
+        award_data_1 = TedAwardDataModel(
+            document=DocumentModel(
+                doc_id="12345-2024",
+                publication_date=date(2024, 1, 1),
+                source_country="DE",
+            ),
+            contracting_body=ContractingBodyModel(
+                official_name="Body 1", country_code="DE"
+            ),
+            contract=ContractModel(title="Contract 1"),
+            awards=[AwardModel(contractors=[])],
+        )
+
+        award_data_2 = TedAwardDataModel(
+            document=DocumentModel(
+                doc_id="67890-2024",
+                publication_date=date(2024, 1, 2),
+                source_country="DE",
+            ),
+            contracting_body=ContractingBodyModel(
+                official_name="Body 2", country_code="DE"
+            ),
+            contract=ContractModel(title="Contract 2"),
+            awards=[AwardModel(contractors=[])],
+        )
+
+        save_document(award_data_1)
+        save_document(award_data_2)
+
+        session = SessionLocal()
+        try:
+            de_rows = session.execute(select(Country).where(Country.code == "DE")).all()
+            assert len(de_rows) == 1
+            assert de_rows[0][0].name == "Germany"
+        finally:
+            session.close()
+
+    def test_country_name_preserved(self, test_db):
+        """Country name is preserved when a later doc doesn't provide one (COALESCE)."""
+        from tedawards.scraper import SessionLocal
+
+        # First doc creates country with name from pycountry
+        award_data_1 = TedAwardDataModel(
+            document=DocumentModel(
+                doc_id="12345-2024",
+                publication_date=date(2024, 1, 1),
+                source_country="FR",
+            ),
+            contracting_body=ContractingBodyModel(
+                official_name="Body 1", country_code="FR"
+            ),
+            contract=ContractModel(title="Contract 1"),
+            awards=[AwardModel(contractors=[])],
+        )
+
+        # Second doc also references FR
+        award_data_2 = TedAwardDataModel(
+            document=DocumentModel(
+                doc_id="67890-2024",
+                publication_date=date(2024, 1, 2),
+                source_country="FR",
+            ),
+            contracting_body=ContractingBodyModel(
+                official_name="Body 2", country_code="FR"
+            ),
+            contract=ContractModel(title="Contract 2"),
+            awards=[AwardModel(contractors=[])],
+        )
+
+        save_document(award_data_1)
+        save_document(award_data_2)
+
+        session = SessionLocal()
+        try:
+            fr = session.execute(
+                select(Country).where(Country.code == "FR")
+            ).scalar_one()
+            assert fr.name == "France"
+        finally:
+            session.close()
+
+    def test_uk_normalized_to_gb_in_country_table(self, test_db):
+        """UK country code is normalized to GB and stored in countries table."""
+        from tedawards.scraper import SessionLocal
+
+        award_data = TedAwardDataModel(
+            document=DocumentModel(
+                doc_id="12345-2024",
+                publication_date=date(2024, 1, 1),
+                source_country="UK",
+            ),
+            contracting_body=ContractingBodyModel(
+                official_name="Body 1", country_code="UK"
+            ),
+            contract=ContractModel(title="Contract 1"),
+            awards=[
+                AwardModel(
+                    contractors=[
+                        ContractorModel(official_name="UK Ltd", country_code="UK")
+                    ]
+                )
+            ],
+        )
+
+        save_document(award_data)
+
+        session = SessionLocal()
+        try:
+            # GB row exists with correct name
+            gb = session.execute(
+                select(Country).where(Country.code == "GB")
+            ).scalar_one()
+            assert "United Kingdom" in gb.name
+
+            # No UK row
+            uk = session.execute(
+                select(Country).where(Country.code == "UK")
+            ).scalar_one_or_none()
+            assert uk is None
+
+            # All entities stored as GB
+            doc = session.execute(
+                select(TEDDocument).where(TEDDocument.doc_id == "12345-2024")
+            ).scalar_one()
+            assert doc.source_country == "GB"
+
+            cb = session.execute(select(ContractingBody)).scalar_one()
+            assert cb.country_code == "GB"
+
+            ct = session.execute(select(Contractor)).scalar_one()
+            assert ct.country_code == "GB"
+        finally:
+            session.close()
+
+    def test_contractor_country_upserted(self, test_db):
+        """Country from contractor is upserted into countries table."""
+        from tedawards.scraper import SessionLocal
+
+        award_data = TedAwardDataModel(
+            document=DocumentModel(
+                doc_id="12345-2024",
+                publication_date=date(2024, 1, 1),
+                source_country="DE",
+            ),
+            contracting_body=ContractingBodyModel(
+                official_name="Body 1", country_code="DE"
+            ),
+            contract=ContractModel(title="Contract 1"),
+            awards=[
+                AwardModel(
+                    contractors=[
+                        ContractorModel(official_name="Polish Co", country_code="PL")
+                    ]
+                )
+            ],
+        )
+
+        save_document(award_data)
+
+        session = SessionLocal()
+        try:
+            countries = {row[0].code for row in session.execute(select(Country)).all()}
+            assert "DE" in countries
+            assert "PL" in countries
+        finally:
+            session.close()
