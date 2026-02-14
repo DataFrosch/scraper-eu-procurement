@@ -11,6 +11,6 @@ wheels/
 test_data
 .env
 /data
-/tedawards.db
-/tedawards.db-journal
+/awards.db
+/awards.db-journal
 /dumps

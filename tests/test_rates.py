@@ -8,7 +8,7 @@ from unittest.mock import patch, Mock
 from sqlalchemy import create_engine, select, text
 from sqlalchemy.orm import sessionmaker
 
-from tedawards.models import (
+from awards.models import (
     Base,
     ExchangeRate,
     PriceIndex,
@@ -17,7 +17,7 @@ from tedawards.models import (
     Document,
     ContractingBody,
 )
-from tedawards.rates import (
+from awards.rates import (
     fetch_ecb_rates,
     fetch_hicp,
     save_exchange_rates,
@@ -25,9 +25,9 @@ from tedawards.rates import (
     update_rates,
     _get_award_currencies,
 )
-from tedawards.db import create_materialized_view, refresh_materialized_view
+from awards.db import create_materialized_view, refresh_materialized_view
 
-TEST_DATABASE_URL = "postgresql://tedawards:tedawards@localhost:5433/tedawards_test"
+TEST_DATABASE_URL = "postgresql://awards:awards@localhost:5433/awards_test"
 
 # --- Canned responses ---
 
@@ -71,9 +71,9 @@ def test_db():
     SessionLocal = sessionmaker(bind=engine, expire_on_commit=False)
 
     with (
-        patch("tedawards.db.engine", engine),
-        patch("tedawards.db.SessionLocal", SessionLocal),
-        patch("tedawards.rates.engine", engine),
+        patch("awards.db.engine", engine),
+        patch("awards.db.SessionLocal", SessionLocal),
+        patch("awards.rates.engine", engine),
     ):
         yield engine
 
@@ -88,7 +88,7 @@ class TestFetchEcbRates:
         mock_resp.text = ECB_CSV
         mock_resp.raise_for_status = Mock()
 
-        with patch("tedawards.rates.requests.get", return_value=mock_resp):
+        with patch("awards.rates.requests.get", return_value=mock_resp):
             rows = fetch_ecb_rates(["GBP", "SEK"], 2024, 2024)
 
         assert len(rows) == 4
@@ -109,7 +109,7 @@ class TestFetchHicp:
         mock_resp.json.return_value = EUROSTAT_JSON
         mock_resp.raise_for_status = Mock()
 
-        with patch("tedawards.rates.requests.get", return_value=mock_resp):
+        with patch("awards.rates.requests.get", return_value=mock_resp):
             rows = fetch_hicp(2022, 2024)
 
         assert len(rows) == 3
@@ -121,7 +121,7 @@ class TestSaveExchangeRates:
     """Tests for save_exchange_rates with test database."""
 
     def test_upsert_idempotent(self, test_db):
-        from tedawards.db import SessionLocal
+        from awards.db import SessionLocal
 
         rows = [
             {"currency": "GBP", "year": 2024, "month": 1, "rate": "0.86115"},
@@ -161,7 +161,7 @@ class TestSavePriceIndices:
     """Tests for save_price_indices with test database."""
 
     def test_upsert_idempotent(self, test_db):
-        from tedawards.db import SessionLocal
+        from awards.db import SessionLocal
 
         rows = [
             {"year": 2023, "index_value": 120.59},
@@ -198,7 +198,7 @@ class TestGetAwardCurrencies:
     """Tests for _get_award_currencies."""
 
     def test_returns_distinct_non_eur(self, test_db):
-        from tedawards.db import SessionLocal
+        from awards.db import SessionLocal
 
         session = SessionLocal()
         try:
@@ -236,7 +236,7 @@ class TestUpdateRates:
     """Integration test for update_rates."""
 
     def test_end_to_end(self, test_db):
-        from tedawards.db import SessionLocal
+        from awards.db import SessionLocal
 
         # Seed an award so currencies are discovered
         session = SessionLocal()
@@ -272,7 +272,7 @@ class TestUpdateRates:
                 return mock_ecb
             return mock_hicp
 
-        with patch("tedawards.rates.requests.get", side_effect=route_get):
+        with patch("awards.rates.requests.get", side_effect=route_get):
             update_rates(2024, 2024)
 
         session = SessionLocal()
@@ -310,7 +310,7 @@ class TestMaterializedView:
 
     def test_refresh_view(self, test_db):
         """Test that refresh works with data."""
-        from tedawards.db import SessionLocal
+        from awards.db import SessionLocal
 
         # Seed data
         session = SessionLocal()
@@ -349,7 +349,7 @@ class TestMaterializedView:
 
     def test_view_currency_conversion(self, test_db):
         """Test that non-EUR values are converted using exchange rates."""
-        from tedawards.db import SessionLocal
+        from awards.db import SessionLocal
 
         session = SessionLocal()
         try:
@@ -391,7 +391,7 @@ class TestMaterializedView:
 
     def test_view_inflation_adjustment(self, test_db):
         """Test that inflation adjustment uses 2024 as base year."""
-        from tedawards.db import SessionLocal
+        from awards.db import SessionLocal
 
         session = SessionLocal()
         try:

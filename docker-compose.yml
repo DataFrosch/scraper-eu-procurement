@@ -2,9 +2,9 @@ services:
   db:
     image: postgres:18
     environment:
-      POSTGRES_USER: tedawards
-      POSTGRES_PASSWORD: tedawards
-      POSTGRES_DB: tedawards
+      POSTGRES_USER: awards
+      POSTGRES_PASSWORD: awards
+      POSTGRES_DB: awards
     ports:
       - "5432:5432"
     volumes:
@@ -13,9 +13,9 @@ services:
   test-db:
     image: postgres:18
     environment:
-      POSTGRES_USER: tedawards
-      POSTGRES_PASSWORD: tedawards
-      POSTGRES_DB: tedawards_test
+      POSTGRES_USER: awards
+      POSTGRES_PASSWORD: awards
+      POSTGRES_DB: awards_test
     ports:
       - "5433:5432"
     profiles:

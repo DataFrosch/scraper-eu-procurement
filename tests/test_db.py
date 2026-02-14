@@ -1,32 +1,21 @@
 """
-Tests for db.py and portals/ted.py logic.
+Tests for db.py — shared database logic.
 """
 
 import pytest
-import tempfile
-import tarfile
 from datetime import date
-from pathlib import Path
-from unittest.mock import Mock, patch
+from unittest.mock import patch
 from decimal import Decimal
 
 from sqlalchemy import create_engine, select, text
 from sqlalchemy.orm import sessionmaker
 
-from tedawards.db import (
+from awards.db import (
     save_document,
     get_session,
     _normalize_country_code,
 )
-from tedawards.portals.ted import (
-    download_package,
-    get_package_files,
-    get_downloaded_packages,
-    get_package_number,
-    download_year,
-    import_year,
-)
-from tedawards.models import (
+from awards.models import (
     Base,
     Document,
     ContractingBody,
@@ -39,7 +28,7 @@ from tedawards.models import (
     award_contractors,
     contract_cpv_codes,
 )
-from tedawards.schema import (
+from awards.schema import (
     AwardDataModel,
     DocumentModel,
     ContractingBodyModel,
@@ -50,14 +39,7 @@ from tedawards.schema import (
     ContractorModel,
 )
 
-TEST_DATABASE_URL = "postgresql://tedawards:tedawards@localhost:5433/tedawards_test"
-
-
-@pytest.fixture
-def temp_data_dir():
-    """Create a temporary directory for test data."""
-    with tempfile.TemporaryDirectory() as tmpdir:
-        yield Path(tmpdir)
+TEST_DATABASE_URL = "postgresql://awards:awards@localhost:5433/awards_test"
 
 
 @pytest.fixture
@@ -72,8 +54,8 @@ def test_db():
     SessionLocal = sessionmaker(bind=engine, expire_on_commit=False)
 
     with (
-        patch("tedawards.db.engine", engine),
-        patch("tedawards.db.SessionLocal", SessionLocal),
+        patch("awards.db.engine", engine),
+        patch("awards.db.SessionLocal", SessionLocal),
     ):
         yield engine
 
@@ -121,142 +103,12 @@ def sample_award_data():
     )
 
 
-class TestDownloadPackage:
-    """Tests for download_package function."""
-
-    def test_existing_files_skipped(self, temp_data_dir):
-        """Test that existing files are skipped without download."""
-        package_number = 202400001
-        extract_dir = temp_data_dir / "202400001"
-        extract_dir.mkdir()
-
-        # Create existing XML files
-        xml_file = extract_dir / "test.xml"
-        xml_file.write_text("<test/>")
-
-        with patch("requests.get") as mock_get:
-            result = download_package(package_number, temp_data_dir)
-
-            # Should not make HTTP request
-            mock_get.assert_not_called()
-            assert result is True
-
-    def test_download_and_extract_tar_gz(self, temp_data_dir):
-        """Test downloading and extracting tar.gz archive."""
-        package_number = 202400001
-
-        # Create a mock tar.gz archive with actual content
-        tar_path = temp_data_dir / "test.tar.gz"
-        with tarfile.open(tar_path, "w:gz") as tar:
-            # Create a temporary XML file to add
-            xml_file = temp_data_dir / "temp_test.xml"
-            xml_file.write_text("<test/>")
-            tar.add(xml_file, arcname="test.xml")
-            xml_file.unlink()
-
-        tar_data = tar_path.read_bytes()
-        tar_path.unlink()
-
-        # Mock HTTP response
-        mock_response = Mock()
-        mock_response.content = tar_data
-        mock_response.raise_for_status = Mock()
-
-        with patch("requests.get", return_value=mock_response):
-            result = download_package(package_number, temp_data_dir)
-
-            assert result is True
-
-            # Verify files were extracted
-            files = get_package_files(package_number, temp_data_dir)
-            assert len(files) == 1
-            assert files[0].name == "test.xml"
-
-            # Archive should be cleaned up
-            archive_path = temp_data_dir / "202400001.tar.gz"
-            assert not archive_path.exists()
-
-    def test_404_returns_false(self, temp_data_dir):
-        """Test that 404 returns False."""
-        package_number = 202400001
-
-        import requests
-
-        mock_response = Mock()
-        mock_response.status_code = 404
-        mock_response.raise_for_status.side_effect = requests.HTTPError(
-            response=mock_response
-        )
-
-        with patch("requests.get", return_value=mock_response):
-            result = download_package(package_number, temp_data_dir)
-            assert result is False
-
-    def test_http_error_raises_exception(self, temp_data_dir):
-        """Test that non-404 HTTP errors are properly raised."""
-        package_number = 202400001
-
-        mock_response = Mock()
-        mock_response.raise_for_status.side_effect = Exception("500 Server Error")
-
-        with patch("requests.get", return_value=mock_response):
-            with pytest.raises(Exception, match="500 Server Error"):
-                download_package(package_number, temp_data_dir)
-
-
-class TestGetPackageFiles:
-    """Tests for get_package_files function."""
-
-    def test_returns_files_from_package(self, temp_data_dir):
-        """Test that files are returned from package directory."""
-        package_number = 202400001
-        extract_dir = temp_data_dir / "202400001"
-        extract_dir.mkdir()
-
-        xml_file = extract_dir / "test.xml"
-        xml_file.write_text("<test/>")
-
-        files = get_package_files(package_number, temp_data_dir)
-        assert len(files) == 1
-        assert files[0] == xml_file
-
-    def test_returns_none_if_not_downloaded(self, temp_data_dir):
-        """Test that None is returned if package not downloaded."""
-        files = get_package_files(202400001, temp_data_dir)
-        assert files is None
-
-    def test_returns_none_if_directory_empty(self, temp_data_dir):
-        """Test that None is returned if directory exists but is empty."""
-        package_number = 202400001
-        extract_dir = temp_data_dir / "202400001"
-        extract_dir.mkdir()
-
-        files = get_package_files(package_number, temp_data_dir)
-        assert files is None
-
-    def test_case_insensitive_file_detection(self, temp_data_dir):
-        """Test that uppercase extensions are also detected."""
-        package_number = 202400001
-        extract_dir = temp_data_dir / "202400001"
-        extract_dir.mkdir()
-
-        xml_file = extract_dir / "test.XML"
-        zip_file = extract_dir / "test.ZIP"
-        xml_file.write_text("<test/>")
-        zip_file.write_bytes(b"PK")
-
-        files = get_package_files(package_number, temp_data_dir)
-        assert len(files) == 2
-        assert xml_file in files
-        assert zip_file in files
-
-
 class TestSaveDocument:
     """Tests for save_document function."""
 
     def test_save_single_award(self, test_db, sample_award_data):
         """Test saving a single award to database."""
-        from tedawards.db import SessionLocal
+        from awards.db import SessionLocal
 
         assert save_document(sample_award_data) is True
 
@@ -309,7 +161,7 @@ class TestSaveDocument:
 
     def test_save_duplicate_document_skipped(self, test_db, sample_award_data):
         """Test that duplicate documents are skipped (idempotent import)."""
-        from tedawards.db import SessionLocal
+        from awards.db import SessionLocal
 
         assert save_document(sample_award_data) is True
         assert save_document(sample_award_data) is False
@@ -325,7 +177,7 @@ class TestSaveDocument:
 
     def test_save_same_contractor_deduplicated(self, test_db):
         """Test that same contractor in different documents creates one shared record."""
-        from tedawards.db import SessionLocal
+        from awards.db import SessionLocal
 
         award_data_1 = AwardDataModel(
             document=DocumentModel(
@@ -392,7 +244,7 @@ class TestSaveDocument:
 
     def test_save_multiple_awards_same_contract(self, test_db):
         """Test saving multiple awards for same contract."""
-        from tedawards.db import SessionLocal
+        from awards.db import SessionLocal
 
         award_data = AwardDataModel(
             document=DocumentModel(
@@ -442,7 +294,7 @@ class TestSaveDocument:
 
     def test_save_reimport_is_idempotent(self, test_db, sample_award_data):
         """Test that re-importing the same data is idempotent (skips existing docs)."""
-        from tedawards.db import SessionLocal
+        from awards.db import SessionLocal
 
         assert save_document(sample_award_data) is True
         assert save_document(sample_award_data) is False
@@ -459,7 +311,7 @@ class TestSaveDocument:
 
     def test_contracting_body_deduplicated(self, test_db):
         """Test that identical contracting bodies across documents are deduplicated."""
-        from tedawards.db import SessionLocal
+        from awards.db import SessionLocal
 
         award_data_1 = AwardDataModel(
             document=DocumentModel(
@@ -513,7 +365,7 @@ class TestSaveDocument:
 
     def test_different_contracting_bodies_not_deduplicated(self, test_db):
         """Test that contracting bodies with different fields remain separate."""
-        from tedawards.db import SessionLocal
+        from awards.db import SessionLocal
 
         award_data_1 = AwardDataModel(
             document=DocumentModel(
@@ -553,7 +405,7 @@ class TestSaveDocument:
 
     def test_cpv_code_lookup_table_deduplication(self, test_db):
         """Test that same CPV code from two documents creates one lookup row."""
-        from tedawards.db import SessionLocal
+        from awards.db import SessionLocal
 
         award_data_1 = AwardDataModel(
             document=DocumentModel(
@@ -618,7 +470,7 @@ class TestSaveDocument:
 
     def test_cpv_description_preserved_when_null(self, test_db):
         """Test that existing description is preserved when later doc has NULL description."""
-        from tedawards.db import SessionLocal
+        from awards.db import SessionLocal
 
         # First doc has description
         award_data_1 = AwardDataModel(
@@ -677,7 +529,7 @@ class TestSaveDocument:
 
     def test_procedure_type_lookup_table_deduplication(self, test_db):
         """Test that same procedure type from two documents creates one lookup row."""
-        from tedawards.db import SessionLocal
+        from awards.db import SessionLocal
 
         award_data_1 = AwardDataModel(
             document=DocumentModel(
@@ -736,7 +588,7 @@ class TestSaveDocument:
 
     def test_procedure_type_description_preserved_when_null(self, test_db):
         """Test that existing description is preserved when later doc has NULL description."""
-        from tedawards.db import SessionLocal
+        from awards.db import SessionLocal
 
         award_data_1 = AwardDataModel(
             document=DocumentModel(
@@ -789,7 +641,7 @@ class TestSaveDocument:
 
     def test_duplicate_cpv_code_deduplicated(self, test_db):
         """Test that duplicate CPV codes in list create one junction table row."""
-        from tedawards.db import SessionLocal
+        from awards.db import SessionLocal
 
         award_data = AwardDataModel(
             document=DocumentModel(
@@ -826,7 +678,7 @@ class TestGetSession:
 
     def test_session_commits_on_success(self, test_db):
         """Test that session commits when no exception occurs."""
-        from tedawards.db import SessionLocal
+        from awards.db import SessionLocal
 
         # Need to create a contracting body first for the FK
         cb_session = SessionLocal()
@@ -857,7 +709,7 @@ class TestGetSession:
 
     def test_session_rolls_back_on_exception(self, test_db):
         """Test that session rolls back when exception occurs."""
-        from tedawards.db import SessionLocal
+        from awards.db import SessionLocal
 
         cb_session = SessionLocal()
         cb = ContractingBody(official_name="Test CB")
@@ -886,170 +738,6 @@ class TestGetSession:
             assert result is None
         finally:
             verify_session.close()
-
-
-class TestGetPackageNumber:
-    """Tests for get_package_number function."""
-
-    def test_first_issue_of_year(self):
-        """Test calculation for first issue of year."""
-        assert get_package_number(2024, 1) == 202400001
-
-    def test_last_issue_of_year(self):
-        """Test calculation for a high issue number."""
-        assert get_package_number(2024, 253) == 202400253
-
-    def test_different_years(self):
-        """Test that different years produce different package numbers."""
-        assert get_package_number(2023, 100) == 202300100
-        assert get_package_number(2024, 100) == 202400100
-        assert get_package_number(2023, 100) != get_package_number(2024, 100)
-
-
-class TestDownloadPackageResumeBehavior:
-    """Tests for download_package resume behavior."""
-
-    def test_uses_existing_extracted_data(self, temp_data_dir):
-        """Test that existing extracted data is reused without re-download."""
-        package_number = 202400001
-        extract_dir = temp_data_dir / "202400001"
-        extract_dir.mkdir()
-
-        # Create existing XML files
-        xml_file = extract_dir / "test.xml"
-        xml_file.write_text("<test/>")
-
-        with patch("requests.get") as mock_get:
-            result = download_package(package_number, temp_data_dir)
-
-            # Should NOT make HTTP request
-            mock_get.assert_not_called()
-            assert result is True
-
-    def test_downloads_if_directory_missing(self, temp_data_dir):
-        """Test that package is downloaded if directory doesn't exist."""
-        package_number = 202400001
-
-        # Create mock tar.gz archive
-        tar_path = temp_data_dir / "test.tar.gz"
-        with tarfile.open(tar_path, "w:gz") as tar:
-            xml_file = temp_data_dir / "temp.xml"
-            xml_file.write_text("<test/>")
-            tar.add(xml_file, arcname="test.xml")
-            xml_file.unlink()
-
-        tar_data = tar_path.read_bytes()
-        tar_path.unlink()
-
-        mock_response = Mock()
-        mock_response.content = tar_data
-        mock_response.raise_for_status = Mock()
-
-        with patch("requests.get", return_value=mock_response):
-            result = download_package(package_number, temp_data_dir)
-
-            assert result is True
-            files = get_package_files(package_number, temp_data_dir)
-            assert len(files) == 1
-            assert files[0].name == "test.xml"
-
-    def test_downloads_if_directory_empty(self, temp_data_dir):
-        """Test that package is downloaded if directory exists but is empty."""
-        package_number = 202400001
-        extract_dir = temp_data_dir / "202400001"
-        extract_dir.mkdir()
-        # Directory exists but has no files
-
-        # Create mock tar.gz archive
-        tar_path = temp_data_dir / "test.tar.gz"
-        with tarfile.open(tar_path, "w:gz") as tar:
-            xml_file = temp_data_dir / "temp.xml"
-            xml_file.write_text("<test/>")
-            tar.add(xml_file, arcname="test.xml")
-            xml_file.unlink()
-
-        tar_data = tar_path.read_bytes()
-        tar_path.unlink()
-
-        mock_response = Mock()
-        mock_response.content = tar_data
-        mock_response.raise_for_status = Mock()
-
-        with patch("requests.get", return_value=mock_response):
-            result = download_package(package_number, temp_data_dir)
-
-            # Should download since directory was empty
-            assert result is True
-            files = get_package_files(package_number, temp_data_dir)
-            assert len(files) == 1
-
-
-class TestDownloadYear:
-    """Tests for download_year function."""
-
-    def test_starts_from_issue_1(self, temp_data_dir):
-        """Test that download always starts from issue 1."""
-        requested_issues = []
-
-        def mock_download(package_num, data_dir):
-            issue = package_num % 100000
-            requested_issues.append(issue)
-            return False
-
-        with patch("tedawards.portals.ted.download_package", side_effect=mock_download):
-            download_year(2024, max_issue=20, data_dir=temp_data_dir)
-
-        assert requested_issues[0] == 1
-
-
-class TestGetDownloadedPackages:
-    """Tests for get_downloaded_packages function."""
-
-    def test_no_packages(self, temp_data_dir):
-        """Test when no packages exist."""
-        packages = get_downloaded_packages(2024, temp_data_dir)
-        assert packages == []
-
-    def test_returns_sorted_packages(self, temp_data_dir):
-        """Test that packages are returned sorted."""
-        (temp_data_dir / "202400010").mkdir()
-        (temp_data_dir / "202400005").mkdir()
-        (temp_data_dir / "202400015").mkdir()
-
-        packages = get_downloaded_packages(2024, temp_data_dir)
-        assert packages == [202400005, 202400010, 202400015]
-
-    def test_filters_by_year(self, temp_data_dir):
-        """Test that only packages for requested year are returned."""
-        (temp_data_dir / "202300010").mkdir()
-        (temp_data_dir / "202400005").mkdir()
-        (temp_data_dir / "202500001").mkdir()
-
-        packages = get_downloaded_packages(2024, temp_data_dir)
-        assert packages == [202400005]
-
-
-class TestImportYear:
-    """Tests for import_year function."""
-
-    def test_imports_all_downloaded_packages(self, test_db, temp_data_dir):
-        """Test that import_year processes all downloaded packages."""
-        # Create package directories with files
-        for issue in [1, 2, 3]:
-            pkg_dir = temp_data_dir / f"20240000{issue}"
-            pkg_dir.mkdir()
-            (pkg_dir / "test.xml").write_text("<test/>")
-
-        imported_packages = []
-
-        def mock_import(package_num, data_dir, executor=None):
-            imported_packages.append(package_num)
-            return 0
-
-        with patch("tedawards.portals.ted.import_package", side_effect=mock_import):
-            import_year(2024, temp_data_dir)
-
-        assert imported_packages == [202400001, 202400002, 202400003]
 
 
 class TestNormalizeCountryCode:
@@ -1081,8 +769,8 @@ class TestCountryLookupTable:
     """Tests for country lookup table integration."""
 
     def test_country_deduplication(self, test_db):
-        """Two docs with same country code → one countries row."""
-        from tedawards.db import SessionLocal
+        """Two docs with same country code -> one countries row."""
+        from awards.db import SessionLocal
 
         award_data_1 = AwardDataModel(
             document=DocumentModel(
@@ -1123,7 +811,7 @@ class TestCountryLookupTable:
 
     def test_country_name_preserved(self, test_db):
         """Country name is preserved when a later doc doesn't provide one (COALESCE)."""
-        from tedawards.db import SessionLocal
+        from awards.db import SessionLocal
 
         # First doc creates country with name from pycountry
         award_data_1 = AwardDataModel(
@@ -1167,7 +855,7 @@ class TestCountryLookupTable:
 
     def test_uk_normalized_to_gb_in_country_table(self, test_db):
         """UK country code is normalized to GB and stored in countries table."""
-        from tedawards.db import SessionLocal
+        from awards.db import SessionLocal
 
         award_data = AwardDataModel(
             document=DocumentModel(
@@ -1220,7 +908,7 @@ class TestCountryLookupTable:
 
     def test_contractor_country_upserted(self, test_db):
         """Country from contractor is upserted into countries table."""
-        from tedawards.db import SessionLocal
+        from awards.db import SessionLocal
 
         award_data = AwardDataModel(
             document=DocumentModel(

@@ -1,6 +1,6 @@
 DUMP_DIR := dumps
-DB_USER := tedawards
-DB_NAME := tedawards
+DB_USER := awards
+DB_NAME := awards
 TIMESTAMP := $(shell date +%Y%m%d_%H%M%S)
 
 .PHONY: dump restore
@@ -12,7 +12,7 @@ dump:
 
 restore:
 	@if [ -z "$(FILE)" ]; then \
-		echo "Usage: make restore FILE=dumps/tedawards_YYYYMMDD_HHMMSS.dump"; \
+		echo "Usage: make restore FILE=dumps/awards_YYYYMMDD_HHMMSS.dump"; \
 		exit 1; \
 	fi
 	docker compose exec -T db pg_restore -U $(DB_USER) -d $(DB_NAME) --clean --if-exists < $(FILE)

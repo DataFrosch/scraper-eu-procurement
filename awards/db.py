@@ -30,7 +30,7 @@ logger = logging.getLogger(__name__)
 
 # Database setup
 DATABASE_URL = os.getenv(
-    "DATABASE_URL", "postgresql://tedawards:tedawards@localhost:5432/tedawards"
+    "DATABASE_URL", "postgresql://awards:awards@localhost:5432/awards"
 )
 
 engine = create_engine(DATABASE_URL, echo=False)
@@ -128,7 +128,7 @@ def _normalize_country_code(value: str | None) -> str | None:
     return code
 
 
-def _save_document_core(session: Session, award_data: AwardDataModel) -> bool:
+def save_document_core(session: Session, award_data: AwardDataModel) -> bool:
     """Save a single award document using Core statements.
 
     Operates within the caller's session/transaction — does not commit.
@@ -248,7 +248,7 @@ def save_document(award_data: AwardDataModel) -> bool:
     Returns True if saved, False if already exists.
     """
     with get_session() as session:
-        return _save_document_core(session, award_data)
+        return save_document_core(session, award_data)
 
 
 _MATERIALIZED_VIEW_SQL = """\

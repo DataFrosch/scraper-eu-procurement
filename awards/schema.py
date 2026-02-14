@@ -1,6 +1,6 @@
 """
-Pydantic models for TED awards data structure.
-Shared across all parsers to ensure consistent data format.
+Pydantic models defining the shared award data structure.
+All portal parsers must produce these models for the database layer.
 """
 
 from datetime import date

@@ -8,16 +8,35 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import List, Optional
 
-from ..db import engine, get_session, _save_document_core
-from ..models import Base
-from ..parsers import try_parse_award
-from . import register
+from ...db import engine, get_session, save_document_core
+from ...models import Base
+from ...schema import AwardDataModel
+from . import ted_v2, eforms_ubl
 
 logger = logging.getLogger(__name__)
 
 # Data directory setup
 DATA_DIR = Path(os.getenv("TED_DATA_DIR", "./data"))
 DATA_DIR.mkdir(exist_ok=True)
+
+
+def try_parse_award(file_path: Path) -> Optional[List[AwardDataModel]]:
+    """Parse file if it's an award notice, return None otherwise.
+
+    Reads first 3KB to detect format, then delegates to appropriate parser.
+    """
+    with open(file_path, "rb") as f:
+        header = f.read(3000).decode("utf-8", errors="ignore")
+
+    # eForms: root element tells us document type directly
+    if "<ContractAwardNotice" in header:
+        return eforms_ubl.parse_xml_file(file_path)
+
+    # TED 2.0: check root + document type code 7 (Contract award)
+    if "<TED_EXPORT" in header and 'CODE="7"' in header:
+        return ted_v2.parse_xml_file(file_path)
+
+    return None
 
 
 def get_package_number(year: int, issue: int) -> int:
@@ -202,7 +221,7 @@ def import_package(
                 if not awards:
                     continue
                 for award_data in awards:
-                    if _save_document_core(session, award_data):
+                    if save_document_core(session, award_data):
                         count += 1
     finally:
         if own_executor:
@@ -237,10 +256,7 @@ def import_year(year: int, data_dir: Path = DATA_DIR):
     logger.info(f"Year {year}: Imported {total_imported} total award notices")
 
 
-# --- Portal registration ---
-
-
-class _TEDPortal:
+class TEDPortal:
     name = "ted"
 
     def download(self, start_year: int, end_year: int) -> None:
@@ -250,6 +266,3 @@ class _TEDPortal:
     def import_data(self, start_year: int, end_year: int) -> None:
         for y in range(start_year, end_year + 1):
             import_year(y)
-
-
-register(_TEDPortal())

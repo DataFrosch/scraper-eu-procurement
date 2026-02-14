@@ -1,5 +1,5 @@
 """
-XML extraction helpers for TED parsers.
+XML extraction helpers for parsers.
 """
 
 from typing import List, Optional

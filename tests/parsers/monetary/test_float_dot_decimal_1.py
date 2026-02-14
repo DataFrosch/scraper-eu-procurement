@@ -1,6 +1,6 @@
 """Tests for float_dot_decimal_1 parser."""
 
-from tedawards.parsers.monetary import parse_float_dot_decimal_1
+from awards.parsers.monetary import parse_float_dot_decimal_1
 
 
 class TestParseFloatDotDecimal1:

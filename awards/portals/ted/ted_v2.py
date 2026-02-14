@@ -16,7 +16,7 @@ from typing import List, NamedTuple, Optional
 
 from lxml import etree
 
-from ..schema import (
+from ...schema import (
     AwardDataModel,
     DocumentModel,
     ContractingBodyModel,
@@ -27,8 +27,8 @@ from ..schema import (
     AwardModel,
     ContractorModel,
 )
-from .monetary import parse_monetary_value
-from .xml import (
+from ...parsers.monetary import parse_monetary_value
+from ...parsers.xml import (
     elem_text,
     elem_attr,
     element_text,

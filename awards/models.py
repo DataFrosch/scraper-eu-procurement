@@ -1,5 +1,5 @@
 """
-SQLAlchemy models for TED awards database.
+SQLAlchemy models for the awards database.
 Contractors and contracting bodies are normalized into shared lookup tables
 with exact-match deduplication via composite unique constraints.
 """

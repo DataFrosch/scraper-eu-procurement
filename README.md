@@ -1,6 +1,6 @@
-# TED Awards Scraper
+# Awards Scraper
 
-A Python scraper for EU procurement contract award notices from [TED Europa](https://ted.europa.eu/). Extracts contract award notices (document type 7) from XML-formatted TED data, covering **January 2011 to present**.
+A Python scraper for EU procurement contract award notices from [TED Europa](https://ted.europa.eu/) and other national procurement portals. Extracts contract award notices from XML-formatted data, covering **January 2011 to present**.
 
 ## Quick Start
 
@@ -12,10 +12,10 @@ uv sync
 docker compose up -d
 
 # Download packages for a year (skips already downloaded)
-uv run tedawards download --start-year 2024
+uv run awards download --start-year 2024
 
 # Import into database
-uv run tedawards import --start-year 2024
+uv run awards import --start-year 2024
 ```
 
 Both commands accept `--start-year` and `--end-year` for processing year ranges.
@@ -26,7 +26,7 @@ Environment variables (set in `.env`):
 
 | Variable | Default | Description |
 |---|---|---|
-| `DATABASE_URL` | `postgresql://tedawards:tedawards@localhost:5432/tedawards` | PostgreSQL connection string |
+| `DATABASE_URL` | `postgresql://awards:awards@localhost:5432/awards` | PostgreSQL connection string |
 | `TED_DATA_DIR` | `./data` | Directory for downloaded packages |
 | `LOG_LEVEL` | `INFO` | Logging level |
 
@@ -48,7 +48,7 @@ PostgreSQL 18 via Docker Compose, managed with SQLAlchemy ORM.
 
 ```bash
 make dump
-make restore FILE=dumps/tedawards_20260211_120000.dump
+make restore FILE=dumps/awards_20260211_120000.dump
 ```
 
 ## Data Methodology
@@ -59,8 +59,9 @@ make restore FILE=dumps/tedawards_20260211_120000.dump
 
 ## Architecture
 
-- **Parsers** — Format auto-detection via `ParserFactory`:
-  - `TedV2Parser` — TED 2.0 R2.0.7/R2.0.8/R2.0.9 (2011–2024)
-  - `EFormsUBLParser` — eForms UBL ContractAwardNotice (2025+)
+- **Portals** — Data source modules (`portals/ted/` for TED Europa):
+  - Format auto-detection via `try_parse_award()` (reads first 3KB)
+  - `ted_v2` — TED 2.0 R2.0.7/R2.0.8/R2.0.9 (2011–2024)
+  - `eforms_ubl` — eForms UBL ContractAwardNotice (2025+)
 - **Package numbering** — TED uses sequential Official Journal (OJ S) issue numbers, not calendar dates. Format: `{year}{issue:05d}` (e.g. `202400001`). A typical year has ~250 issues. The scraper stops after 10 consecutive 404s.
 - **Idempotent imports** — Re-importing a document is a no-op (skipped if `doc_id` exists).

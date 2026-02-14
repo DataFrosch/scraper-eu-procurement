@@ -16,8 +16,8 @@ import pytest
 from pathlib import Path
 from datetime import date
 
-from tedawards.parsers import ted_v2
-from tedawards.schema import (
+from awards.portals.ted import ted_v2
+from awards.schema import (
     AwardDataModel,
     DocumentModel,
     ContractingBodyModel,
@@ -27,7 +27,7 @@ from tedawards.schema import (
 )
 
 
-FIXTURES_DIR = Path(__file__).parent.parent / "fixtures"
+FIXTURES_DIR = Path(__file__).parent / "fixtures"
 
 # List of TED 2.0 R2.0.7 fixtures (2011-2013)
 TED_V2_R207_FIXTURES = [

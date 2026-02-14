@@ -8,10 +8,10 @@ Validates that:
 
 from pathlib import Path
 
-from tedawards.parsers import try_parse_award
+from awards.portals.ted import try_parse_award
 
 
-FIXTURES_DIR = Path(__file__).parent.parent / "fixtures"
+FIXTURES_DIR = Path(__file__).parent / "fixtures"
 
 
 class TestTryParseAward:

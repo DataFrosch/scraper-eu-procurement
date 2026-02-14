@@ -14,7 +14,7 @@ from typing import List, Optional
 
 from lxml import etree
 
-from ..schema import (
+from ...schema import (
     AwardDataModel,
     DocumentModel,
     ContractingBodyModel,
@@ -24,7 +24,7 @@ from ..schema import (
     ContractorModel,
 )
 from .ted_v2 import _normalize_contract_nature_code, _normalize_procedure_type
-from .xml import first_text
+from ...parsers.xml import first_text
 
 
 def _parse_date_eforms(text: Optional[str]) -> Optional[date]:

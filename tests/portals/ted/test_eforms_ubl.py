@@ -11,8 +11,8 @@ These tests validate:
 import pytest
 from pathlib import Path
 
-from tedawards.parsers import eforms_ubl
-from tedawards.schema import (
+from awards.portals.ted import eforms_ubl
+from awards.schema import (
     AwardDataModel,
     DocumentModel,
     ContractingBodyModel,
@@ -22,7 +22,7 @@ from tedawards.schema import (
 )
 
 
-FIXTURES_DIR = Path(__file__).parent.parent / "fixtures"
+FIXTURES_DIR = Path(__file__).parent / "fixtures"
 
 # List of eForms UBL fixtures (2025+)
 EFORMS_UBL_FIXTURES = [

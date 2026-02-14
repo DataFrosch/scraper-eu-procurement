@@ -1,6 +1,6 @@
 """Tests for parse_monetary_value aggregator."""
 
-from tedawards.parsers.monetary import parse_monetary_value
+from awards.parsers.monetary import parse_monetary_value
 
 
 class TestParseMonetaryValue:

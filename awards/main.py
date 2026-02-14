@@ -5,9 +5,7 @@ from datetime import datetime
 from .db import refresh_materialized_view
 from .rates import update_rates
 
-# Import portal modules to trigger registration
 from .portals import PORTALS
-from .portals import ted as _ted_portal  # noqa: F401 — triggers registration
 
 logging.basicConfig(
     level=getattr(logging, os.getenv("LOG_LEVEL", "INFO")),
@@ -32,7 +30,7 @@ def _resolve_portals(portal_arg: str | None) -> list:
 
 @click.group()
 def cli():
-    """TED Awards scraper for EU procurement contract awards."""
+    """Procurement awards scraper."""
     pass
 
 

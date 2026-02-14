@@ -1,5 +1,5 @@
 [project]
-name = "tedawards"
+name = "awards"
 version = "0.1.0"
 description = "TED Awards scraper for EU procurement contract awards"
 readme = "README.md"
@@ -17,13 +17,13 @@ dependencies = [
 ]
 
 [project.scripts]
-tedawards = "tedawards.main:cli"
+awards = "awards.main:cli"
 
 [tool.uv]
 package = true
 
 [tool.setuptools.packages.find]
-include = ["tedawards*"]
+include = ["awards*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

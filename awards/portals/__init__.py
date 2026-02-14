@@ -2,6 +2,8 @@
 
 from typing import Protocol
 
+from .ted import TEDPortal
+
 
 class Portal(Protocol):
     """Interface that each portal module must implement."""
@@ -13,8 +15,6 @@ class Portal(Protocol):
     def import_data(self, start_year: int, end_year: int) -> None: ...
 
 
-PORTALS: dict[str, Portal] = {}
-
-
-def register(portal: Portal) -> None:
-    PORTALS[portal.name] = portal
+PORTALS: dict[str, Portal] = {
+    "ted": TEDPortal(),
+}
