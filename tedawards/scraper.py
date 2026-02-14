@@ -11,6 +11,8 @@ from sqlalchemy import bindparam, create_engine, func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import sessionmaker, Session
 
+from sqlalchemy import text as sa_text
+
 from .parsers import try_parse_award
 from .models import (
     Base,
@@ -429,3 +431,71 @@ def import_year(year: int, data_dir: Path = DATA_DIR):
             total_imported += import_package(package_number, data_dir, executor)
 
     logger.info(f"Year {year}: Imported {total_imported} total award notices")
+
+
+_MATERIALIZED_VIEW_SQL = """\
+CREATE MATERIALIZED VIEW IF NOT EXISTS awards_adjusted AS
+SELECT
+    a.id AS award_id, a.contract_id, c.ted_doc_id AS doc_id,
+    d.publication_date, d.source_country,
+    cb.official_name AS contracting_body_name,
+    cb.country_code AS contracting_body_country,
+    c.title AS contract_title, c.main_cpv_code,
+    c.contract_nature_code, c.procedure_type_code,
+    c.nuts_code AS contract_nuts_code,
+    a.award_title, a.awarded_value, a.awarded_value_currency,
+    a.tenders_received,
+    CASE
+        WHEN a.awarded_value IS NULL OR a.awarded_value_currency IS NULL THEN NULL
+        WHEN a.awarded_value_currency = 'EUR' THEN a.awarded_value
+        WHEN er.rate IS NOT NULL THEN ROUND(a.awarded_value / er.rate, 2)
+    END AS value_eur,
+    CASE
+        WHEN a.awarded_value IS NULL OR a.awarded_value_currency IS NULL THEN NULL
+        WHEN pi_year.index_value IS NULL OR pi_base.index_value IS NULL THEN NULL
+        WHEN a.awarded_value_currency = 'EUR'
+            THEN ROUND(a.awarded_value * pi_base.index_value / pi_year.index_value, 2)
+        WHEN er.rate IS NOT NULL
+            THEN ROUND(a.awarded_value / er.rate * pi_base.index_value / pi_year.index_value, 2)
+    END AS value_eur_real
+FROM awards a
+JOIN contracts c ON a.contract_id = c.id
+JOIN ted_documents d ON c.ted_doc_id = d.doc_id
+JOIN contracting_bodies cb ON d.contracting_body_id = cb.id
+LEFT JOIN exchange_rates er
+    ON er.currency = a.awarded_value_currency
+    AND er.year = EXTRACT(YEAR FROM d.publication_date)::int
+    AND er.month = EXTRACT(MONTH FROM d.publication_date)::int
+LEFT JOIN price_indices pi_year
+    ON pi_year.year = EXTRACT(YEAR FROM d.publication_date)::int
+LEFT JOIN (SELECT index_value FROM price_indices WHERE year = (SELECT MAX(year) FROM price_indices)) pi_base ON TRUE
+WITH DATA
+"""
+
+_VIEW_INDEXES = [
+    "CREATE UNIQUE INDEX IF NOT EXISTS idx_awards_adjusted_award_id ON awards_adjusted (award_id)",
+    "CREATE INDEX IF NOT EXISTS idx_awards_adjusted_pub_date ON awards_adjusted (publication_date)",
+    "CREATE INDEX IF NOT EXISTS idx_awards_adjusted_country ON awards_adjusted (source_country)",
+    "CREATE INDEX IF NOT EXISTS idx_awards_adjusted_cpv ON awards_adjusted (main_cpv_code)",
+]
+
+
+def create_materialized_view(eng=None):
+    """Create the awards_adjusted materialized view if it doesn't exist."""
+    eng = eng or engine
+    with eng.connect() as conn:
+        conn.execute(sa_text(_MATERIALIZED_VIEW_SQL))
+        for idx_sql in _VIEW_INDEXES:
+            conn.execute(sa_text(idx_sql))
+        conn.commit()
+    logger.info("Materialized view awards_adjusted ensured")
+
+
+def refresh_materialized_view(eng=None):
+    """Refresh the awards_adjusted materialized view concurrently."""
+    eng = eng or engine
+    create_materialized_view(eng)
+    with eng.connect() as conn:
+        conn.execute(sa_text("REFRESH MATERIALIZED VIEW CONCURRENTLY awards_adjusted"))
+        conn.commit()
+    logger.info("Materialized view awards_adjusted refreshed")

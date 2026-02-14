@@ -43,6 +43,12 @@ event.listen(
     DDL("CREATE EXTENSION IF NOT EXISTS pg_trgm"),
 )
 
+event.listen(
+    Base.metadata,
+    "before_drop",
+    DDL("DROP MATERIALIZED VIEW IF EXISTS awards_adjusted"),
+)
+
 
 # Junction table for many-to-many relationship between awards and contractors
 award_contractors = Table(
@@ -260,6 +266,32 @@ class Award(Base):
         Index("idx_award_contract", "contract_id"),
         Index("idx_awards_tenders_received", "tenders_received"),
     )
+
+
+class ExchangeRate(Base):
+    """Monthly ECB exchange rates (1 EUR = X units of currency)."""
+
+    __tablename__ = "exchange_rates"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    currency: Mapped[str] = mapped_column(String(3), nullable=False)
+    year: Mapped[int] = mapped_column(Integer, nullable=False)
+    month: Mapped[int] = mapped_column(Integer, nullable=False)
+    rate: Mapped[Decimal] = mapped_column(Numeric(18, 6), nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("currency", "year", "month", name="uq_exchange_rate"),
+    )
+
+
+class PriceIndex(Base):
+    """Annual Eurostat HICP price index (euro area average)."""
+
+    __tablename__ = "price_indices"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    year: Mapped[int] = mapped_column(Integer, nullable=False, unique=True)
+    index_value: Mapped[Decimal] = mapped_column(Numeric(12, 4), nullable=False)
 
 
 class Contractor(Base):
