@@ -12,7 +12,7 @@ import logging
 import re
 from datetime import date
 from pathlib import Path
-from typing import List, Optional
+from typing import List, NamedTuple, Optional
 
 from lxml import etree
 
@@ -54,13 +54,14 @@ _AUTHORITY_TYPE_CODE_MAP: dict[str, str | None] = {
 
 # Mapping from TED v2 R2.0.9 canonical codes (CA_TYPE VALUE) to eForms codes.
 # Source: OP-TED/ted-xml-data-converter other-mappings.xml.
-_TED_V2_AUTHORITY_TO_CANONICAL: dict[str, str] = {
+_TED_V2_AUTHORITY_TO_CANONICAL: dict[str, str | None] = {
     "MINISTRY": "cga",
     "NATIONAL_AGENCY": "cga",
     "REGIONAL_AUTHORITY": "ra",
     "REGIONAL_AGENCY": "body-pl-ra",
     "BODY_PUBLIC": "body-pl",
     "EU_INSTITUTION": "eu-ins-bod-ag",
+    "OTHER": None,  # no eForms equivalent, consistent with old code "8" → None
 }
 
 # Human-readable descriptions for authority type codes
@@ -90,12 +91,23 @@ _CONTRACT_NATURE_CODE_MAP: dict[str, str] = {
     "4": "services",
 }
 
+# Mapping from TED v2 R2.0.9 uppercase codes (TYPE_CONTRACT CTYPE) to eForms codes.
+_TED_V2_CONTRACT_NATURE_TO_CANONICAL: dict[str, str] = {
+    "WORKS": "works",
+    "SUPPLIES": "supplies",
+    "SERVICES": "services",
+}
+
+# Known eForms contract nature codes (contract-nature-types codelist).
+_CONTRACT_NATURE_CODES: set[str] = {"works", "supplies", "services", "combined"}
+
 
 def _normalize_contract_nature_code(raw_code: Optional[str]) -> Optional[str]:
     """Normalize a contract nature code to exact eForms form (lowercase).
 
-    Old-style numeric codes are mapped; TED v2 uppercase codes are lowercased.
-    eForms codes pass through unchanged.
+    Old-style numeric codes are mapped via _CONTRACT_NATURE_CODE_MAP.
+    TED v2 uppercase codes are mapped via _TED_V2_CONTRACT_NATURE_TO_CANONICAL.
+    Known eForms codes pass through. Unknown codes log a warning and return None.
     """
     if raw_code is None:
         return None
@@ -103,46 +115,67 @@ def _normalize_contract_nature_code(raw_code: Optional[str]) -> Optional[str]:
     if raw_code in _CONTRACT_NATURE_CODE_MAP:
         return _CONTRACT_NATURE_CODE_MAP[raw_code]
 
-    return raw_code.lower()
+    if raw_code in _TED_V2_CONTRACT_NATURE_TO_CANONICAL:
+        return _TED_V2_CONTRACT_NATURE_TO_CANONICAL[raw_code]
+
+    if raw_code in _CONTRACT_NATURE_CODES:
+        return raw_code
+
+    logger.warning("Unknown contract nature code: %r", raw_code)
+    return None
 
 
 # Procedure type normalization: exact eForms codes (procurement-procedure-type codelist).
 # Source: OP-TED/ted-xml-data-converter other-mappings.xml (BT-105 procedure-types).
 # In eForms, "accelerated" is a separate boolean flag (BT-106), not a procedure type.
 # The converter maps ACCELERATED_PROC → BT-106=true and keeps the base procedure type.
-# We return (ProcedureTypeEntry, accelerated_bool) to match this structure.
-#
+
+
+class ProcedureMapping(NamedTuple):
+    """Result of mapping a raw procedure type code to eForms."""
+
+    code: str | None
+    accelerated: bool
+
+
 # Mapping from old-style procedure type codes (R2.0.7/R2.0.8 PR_PROC CODE).
 # Verified empirically from F03_2014 dual-code files.
 # Codes "B" (competitive negotiation) and "4" (negotiated with competition) both map
 # to neg-w-call per the official converter — they were always the same thing.
-_PROCEDURE_TYPE_CODE_MAP: dict[str, tuple[str | None, bool]] = {
-    "1": ("open", False),
-    "2": ("restricted", False),
-    "3": ("restricted", True),
-    "4": ("neg-w-call", False),
-    "6": ("neg-w-call", True),
-    "B": ("neg-w-call", False),
-    "C": ("comp-dial", False),
-    "G": ("innovation", False),
-    "T": ("neg-wo-call", False),
-    "V": ("neg-wo-call", False),
-    "N": (None, False),
-    "Z": (None, False),
+_PROCEDURE_TYPE_CODE_MAP: dict[str, ProcedureMapping] = {
+    "1": ProcedureMapping("open", False),
+    "2": ProcedureMapping("restricted", False),
+    "3": ProcedureMapping("restricted", True),
+    "4": ProcedureMapping("neg-w-call", False),
+    "6": ProcedureMapping("neg-w-call", True),
+    "B": ProcedureMapping("neg-w-call", False),
+    "C": ProcedureMapping("comp-dial", False),
+    "G": ProcedureMapping("innovation", False),
+    "T": ProcedureMapping("neg-wo-call", False),
+    "V": ProcedureMapping("neg-wo-call", False),
+    "N": ProcedureMapping(None, False),
+    "Z": ProcedureMapping(None, False),
 }
 
 # Mapping from TED v2 R2.0.9 canonical codes (PT_* element names / PR_PROC CODE values)
 # to eForms codes. Source: OP-TED/ted-xml-data-converter other-mappings.xml.
-_TED_V2_TO_CANONICAL: dict[str, tuple[str, bool]] = {
-    "OPEN": ("open", False),
-    "RESTRICTED": ("restricted", False),
-    "ACCELERATED_RESTRICTED": ("restricted", True),
-    "COMPETITIVE_NEGOTIATION": ("neg-w-call", False),
-    "NEGOTIATED_WITH_COMPETITION": ("neg-w-call", False),
-    "ACCELERATED_NEGOTIATED": ("neg-w-call", True),
-    "COMPETITIVE_DIALOGUE": ("comp-dial", False),
-    "INNOVATION_PARTNERSHIP": ("innovation", False),
-    "AWARD_CONTRACT_WITHOUT_CALL": ("neg-wo-call", False),
+_TED_V2_TO_CANONICAL: dict[str, ProcedureMapping] = {
+    "OPEN": ProcedureMapping("open", False),
+    "RESTRICTED": ProcedureMapping("restricted", False),
+    "ACCELERATED_RESTRICTED": ProcedureMapping("restricted", True),
+    "COMPETITIVE_NEGOTIATION": ProcedureMapping("neg-w-call", False),
+    "NEGOTIATED_WITH_COMPETITION": ProcedureMapping("neg-w-call", False),
+    "ACCELERATED_NEGOTIATED": ProcedureMapping("neg-w-call", True),
+    "COMPETITIVE_DIALOGUE": ProcedureMapping("comp-dial", False),
+    "INNOVATION_PARTNERSHIP": ProcedureMapping("innovation", False),
+    "AWARD_CONTRACT_WITHOUT_CALL": ProcedureMapping("neg-wo-call", False),
+    "NEGOTIATED_WITH_PRIOR_CALL": ProcedureMapping("neg-w-call", False),
+    "AWARD_CONTRACT_WITH_PRIOR_PUBLICATION": ProcedureMapping("neg-w-call", False),
+    "AWARD_CONTRACT_WITHOUT_PUBLICATION": ProcedureMapping("neg-wo-call", False),
+    "NEGOTIATED_WITHOUT_PUBLICATION": ProcedureMapping("neg-wo-call", False),
+    "INVOLVING_NEGOTIATION": ProcedureMapping(
+        None, False
+    ),  # maps to UNKNOWN in converter
 }
 
 # Human-readable descriptions for procedure type codes
@@ -186,17 +219,22 @@ def _normalize_procedure_type(
     # TED v2 R2.0.9 uppercase code that needs remapping
     if raw_code in _TED_V2_TO_CANONICAL:
         canonical, accelerated = _TED_V2_TO_CANONICAL[raw_code]
+        if canonical is None:
+            return None, False
         return ProcedureTypeEntry(
             code=canonical,
             description=_PROCEDURE_TYPE_DESCRIPTIONS.get(canonical),
         ), accelerated
 
-    # eForms or unknown code — lowercase for consistency
-    code = raw_code.lower()
-    return ProcedureTypeEntry(
-        code=code,
-        description=description or _PROCEDURE_TYPE_DESCRIPTIONS.get(code),
-    ), False
+    # Known eForms code — pass through
+    if raw_code in _PROCEDURE_TYPE_DESCRIPTIONS:
+        return ProcedureTypeEntry(
+            code=raw_code,
+            description=description or _PROCEDURE_TYPE_DESCRIPTIONS[raw_code],
+        ), False
+
+    logger.warning("Unknown procedure type code: %r", raw_code)
+    return None, False
 
 
 logger = logging.getLogger(__name__)
@@ -404,17 +442,22 @@ def _make_authority_type_entry(
     # TED v2 R2.0.9 uppercase code that needs remapping
     if raw_code in _TED_V2_AUTHORITY_TO_CANONICAL:
         canonical = _TED_V2_AUTHORITY_TO_CANONICAL[raw_code]
+        if canonical is None:
+            return None
         return AuthorityTypeEntry(
             code=canonical,
             description=_AUTHORITY_TYPE_DESCRIPTIONS.get(canonical),
         )
 
-    # eForms or unknown code — lowercase for consistency
-    code = raw_code.lower()
-    return AuthorityTypeEntry(
-        code=code,
-        description=_AUTHORITY_TYPE_DESCRIPTIONS.get(code),
-    )
+    # Known eForms code — pass through
+    if raw_code in _AUTHORITY_TYPE_DESCRIPTIONS:
+        return AuthorityTypeEntry(
+            code=raw_code,
+            description=_AUTHORITY_TYPE_DESCRIPTIONS[raw_code],
+        )
+
+    logger.warning("Unknown authority type code: %r", raw_code)
+    return None
 
 
 def _extract_contracting_body(
