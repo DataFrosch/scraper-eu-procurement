@@ -686,7 +686,7 @@ class TestSaveDocument:
             contract=ContractModel(
                 title="Contract 1",
                 procedure_type=ProcedureTypeEntry(
-                    code="1", description="Open procedure"
+                    code="open", description="Open procedure"
                 ),
             ),
             awards=[AwardModel(contractors=[])],
@@ -704,7 +704,7 @@ class TestSaveDocument:
             contract=ContractModel(
                 title="Contract 2",
                 procedure_type=ProcedureTypeEntry(
-                    code="1", description="Open procedure"
+                    code="open", description="Open procedure"
                 ),
             ),
             awards=[AwardModel(contractors=[])],
@@ -718,14 +718,14 @@ class TestSaveDocument:
             # Only one procedure type row (deduplicated)
             pt_rows = session.execute(select(ProcedureType)).all()
             assert len(pt_rows) == 1
-            assert pt_rows[0][0].code == "1"
+            assert pt_rows[0][0].code == "open"
             assert pt_rows[0][0].description == "Open procedure"
 
             # Both contracts reference the same procedure type
             contracts = session.execute(select(Contract)).all()
             assert len(contracts) == 2
             for row in contracts:
-                assert row[0].procedure_type_code == "1"
+                assert row[0].procedure_type_code == "open"
         finally:
             session.close()
 

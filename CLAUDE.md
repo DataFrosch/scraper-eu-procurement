@@ -41,6 +41,10 @@ TED Awards scraper for analyzing EU procurement contract awards from **2011 onwa
 
 **CRITICAL**: Do NOT filter by language — archives contain one XML per document in its original language. Filtering would lose 95%+ of documents.
 
+### Code Normalization
+
+Coded values (procedure types, authority types, contract nature codes) use exact eForms codes (lowercase, hyphens). TED v2 codes are mapped forward to eForms equivalents following the official [OP-TED/ted-xml-data-converter](https://github.com/OP-TED/ted-xml-data-converter) mappings (`xslt/other-mappings.xml`). In eForms, "accelerated" is a separate boolean (BT-106), not a procedure type variant — the `contracts.accelerated` column captures this.
+
 ## Database Architecture
 
 Schema in `models.py`, setup in `scraper.py`.

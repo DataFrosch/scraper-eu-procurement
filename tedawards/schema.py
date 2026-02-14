@@ -82,6 +82,9 @@ class ContractModel(BaseModel):
     procedure_type: Optional[ProcedureTypeEntry] = Field(
         None, description="Procedure type"
     )
+    accelerated: bool = Field(
+        False, description="Accelerated procedure (eForms BT-106)"
+    )
 
 
 class ContractorModel(BaseModel):

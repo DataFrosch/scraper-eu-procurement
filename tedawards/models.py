@@ -234,6 +234,9 @@ class Contract(Base):
     procedure_type_code: Mapped[Optional[str]] = mapped_column(
         String, ForeignKey("procedure_types.code"), nullable=True
     )
+    accelerated: Mapped[bool] = mapped_column(
+        default=False, server_default="false", nullable=False
+    )
     # Relationships
     document: Mapped["TEDDocument"] = relationship(
         "TEDDocument", back_populates="contracts"

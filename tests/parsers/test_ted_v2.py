@@ -117,23 +117,23 @@ class TestTedV2R207Parser:
         """Test procedure_type extraction for R2.0.7."""
         fixture_file = FIXTURES_DIR / "ted_v2_r2_0_7_2011.xml"
         result = ted_v2.parse_xml_file(fixture_file)
-        assert result[0].contract.procedure_type.code == "RESTRICTED"
+        assert result[0].contract.procedure_type.code == "restricted"
         assert result[0].contract.procedure_type.description == "Restricted procedure"
 
     def test_parse_r207_contract_nature_normalized(self):
-        """Test contract nature code is normalized from old '4' to 'SERVICES'."""
+        """Test contract nature code is normalized from old '4' to 'services'."""
         fixture_file = FIXTURES_DIR / "ted_v2_r2_0_7_2011.xml"
         result = ted_v2.parse_xml_file(fixture_file)
-        assert result[0].contract.contract_nature_code == "SERVICES"
+        assert result[0].contract.contract_nature_code == "services"
 
     def test_parse_r207_authority_type_normalized(self):
-        """Test authority type code is normalized from old '3' to 'REGIONAL_AUTHORITY'."""
+        """Test authority type code is normalized from old '3' to 'ra'."""
         fixture_file = FIXTURES_DIR / "ted_v2_r2_0_7_2011.xml"
         result = ted_v2.parse_xml_file(fixture_file)
         cb = result[0].contracting_body
         assert cb.authority_type is not None
-        assert cb.authority_type.code == "REGIONAL_AUTHORITY"
-        assert cb.authority_type.description == "Regional or local authority"
+        assert cb.authority_type.code == "ra"
+        assert cb.authority_type.description == "Regional authority"
 
     def test_parse_r207_cpv_codes(self):
         """Test CPV code extraction for R2.0.7: main + additional with descriptions."""
@@ -211,23 +211,23 @@ class TestTedV2R208Parser:
         """Test procedure_type extraction for R2.0.8."""
         fixture_file = FIXTURES_DIR / "ted_v2_r2_0_8_2015.xml"
         result = ted_v2.parse_xml_file(fixture_file)
-        assert result[0].contract.procedure_type.code == "OPEN"
+        assert result[0].contract.procedure_type.code == "open"
         assert result[0].contract.procedure_type.description == "Open procedure"
 
     def test_parse_r208_contract_nature_normalized(self):
-        """Test contract nature code is normalized from old '4' to 'SERVICES'."""
+        """Test contract nature code is normalized from old '4' to 'services'."""
         fixture_file = FIXTURES_DIR / "ted_v2_r2_0_8_2015.xml"
         result = ted_v2.parse_xml_file(fixture_file)
-        assert result[0].contract.contract_nature_code == "SERVICES"
+        assert result[0].contract.contract_nature_code == "services"
 
     def test_parse_r208_authority_type_normalized(self):
-        """Test authority type code is normalized from old '3' to 'REGIONAL_AUTHORITY'."""
+        """Test authority type code is normalized from old '3' to 'ra'."""
         fixture_file = FIXTURES_DIR / "ted_v2_r2_0_8_2015.xml"
         result = ted_v2.parse_xml_file(fixture_file)
         cb = result[0].contracting_body
         assert cb.authority_type is not None
-        assert cb.authority_type.code == "REGIONAL_AUTHORITY"
-        assert cb.authority_type.description == "Regional or local authority"
+        assert cb.authority_type.code == "ra"
+        assert cb.authority_type.description == "Regional authority"
 
     def test_parse_r208_cpv_codes(self):
         """Test CPV code extraction for R2.0.8: main + additional with descriptions."""
@@ -282,7 +282,7 @@ class TestTedV2R209Parser:
         assert contracting_body.town == "Innsbruck", "Town should be Innsbruck"
         assert contracting_body.nuts_code == "AT332", "NUTS code should be AT332"
         assert contracting_body.authority_type is not None
-        assert contracting_body.authority_type.code == "BODY_PUBLIC"
+        assert contracting_body.authority_type.code == "body-pl"
         assert (
             contracting_body.authority_type.description == "Body governed by public law"
         )
@@ -301,7 +301,7 @@ class TestTedV2R209Parser:
         assert len(contract.cpv_codes) == 1, "Should have one CPV code"
         assert contract.cpv_codes[0].code == "38430000", "CPV code should match"
         assert contract.cpv_codes[0].description == "Detection and analysis apparatus"
-        assert contract.procedure_type.code == "NEG_WO_CALL", (
+        assert contract.procedure_type.code == "neg-wo-call", (
             "Procedure type code should be normalized from T"
         )
         assert (

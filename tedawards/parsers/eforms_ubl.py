@@ -298,7 +298,17 @@ def _extract_contract_info(root: etree._Element) -> Optional[ContractModel]:
             cpv_codes.append(CpvCodeEntry(code=additional_code.strip()))
 
     proc_code = first_text(proc_elem)
-    procedure_type = _normalize_procedure_type(proc_code, None)
+    procedure_type, accelerated = _normalize_procedure_type(proc_code, None)
+
+    # BT-106: Procedure Accelerated — separate boolean in eForms
+    if not accelerated:
+        accel_elems = root.xpath(
+            ".//cac:TenderingProcess/cac:ProcessJustification"
+            "/cbc:ProcessReasonCode[@listName='accelerated-procedure']",
+            namespaces=NAMESPACES,
+        )
+        if accel_elems and first_text(accel_elems) == "true":
+            accelerated = True
 
     return ContractModel(
         title=title,
@@ -308,6 +318,7 @@ def _extract_contract_info(root: etree._Element) -> Optional[ContractModel]:
         nuts_code=first_text(nuts_elem),
         contract_nature_code=_normalize_contract_nature_code(first_text(nature_elem)),
         procedure_type=procedure_type,
+        accelerated=accelerated,
     )
 
 
