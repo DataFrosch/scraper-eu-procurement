@@ -145,8 +145,8 @@ class ContractingBody(Base):
     )
     main_activity_code: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     # Relationships
-    documents: Mapped[List["TEDDocument"]] = relationship(
-        "TEDDocument", back_populates="contracting_body"
+    documents: Mapped[List["Document"]] = relationship(
+        "Document", back_populates="contracting_body"
     )
 
     __table_args__ = (
@@ -173,10 +173,10 @@ class ContractingBody(Base):
     )
 
 
-class TEDDocument(Base):
-    """Main TED document metadata."""
+class Document(Base):
+    """Document metadata."""
 
-    __tablename__ = "ted_documents"
+    __tablename__ = "documents"
 
     doc_id: Mapped[str] = mapped_column(String, primary_key=True)
     edition: Mapped[Optional[str]] = mapped_column(String, nullable=True)
@@ -205,13 +205,13 @@ class TEDDocument(Base):
     )
 
     __table_args__ = (
-        Index("idx_ted_documents_pub_date", "publication_date"),
+        Index("idx_documents_pub_date", "publication_date"),
         Index(
-            "idx_ted_documents_pub_year",
+            "idx_documents_pub_year",
             text("extract(year from publication_date)"),
         ),
-        Index("idx_ted_documents_country", "source_country"),
-        Index("idx_ted_documents_cb", "contracting_body_id"),
+        Index("idx_documents_country", "source_country"),
+        Index("idx_documents_cb", "contracting_body_id"),
     )
 
 
@@ -221,8 +221,8 @@ class Contract(Base):
     __tablename__ = "contracts"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    ted_doc_id: Mapped[str] = mapped_column(
-        String, ForeignKey("ted_documents.doc_id", ondelete="CASCADE"), nullable=False
+    doc_id: Mapped[str] = mapped_column(
+        String, ForeignKey("documents.doc_id", ondelete="CASCADE"), nullable=False
     )
     title: Mapped[str] = mapped_column(Text, nullable=False)
     short_description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
@@ -238,9 +238,7 @@ class Contract(Base):
         default=False, server_default="false", nullable=False
     )
     # Relationships
-    document: Mapped["TEDDocument"] = relationship(
-        "TEDDocument", back_populates="contracts"
-    )
+    document: Mapped["Document"] = relationship("Document", back_populates="contracts")
     awards: Mapped[List["Award"]] = relationship(
         "Award", back_populates="contract", cascade="all, delete-orphan"
     )
@@ -249,7 +247,7 @@ class Contract(Base):
     )
 
     __table_args__ = (
-        Index("idx_contract_document", "ted_doc_id"),
+        Index("idx_contract_document", "doc_id"),
         Index("idx_contracts_nuts", "nuts_code"),
         Index("idx_contracts_procedure", "procedure_type_code"),
         Index("idx_contracts_main_cpv", "main_cpv_code"),

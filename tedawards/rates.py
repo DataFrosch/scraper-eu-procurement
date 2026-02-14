@@ -10,7 +10,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
 from .models import ExchangeRate, PriceIndex
-from .scraper import engine, get_session
+from .db import engine, get_session
 
 logger = logging.getLogger(__name__)
 

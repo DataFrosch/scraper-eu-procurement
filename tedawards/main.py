@@ -2,13 +2,32 @@ import click
 import logging
 import os
 from datetime import datetime
-from .scraper import download_year, import_year, refresh_materialized_view
+from .db import refresh_materialized_view
 from .rates import update_rates
+
+# Import portal modules to trigger registration
+from .portals import PORTALS
+from .portals import ted as _ted_portal  # noqa: F401 — triggers registration
 
 logging.basicConfig(
     level=getattr(logging, os.getenv("LOG_LEVEL", "INFO")),
     format="%(asctime)s - %(levelname)s - %(message)s",
 )
+
+
+def _resolve_portals(portal_arg: str | None) -> list:
+    """Resolve --portal argument to list of portal objects."""
+    if portal_arg is None:
+        return list(PORTALS.values())
+    names = [n.strip() for n in portal_arg.split(",")]
+    result = []
+    for name in names:
+        if name not in PORTALS:
+            raise click.BadParameter(
+                f"Unknown portal '{name}'. Available: {', '.join(PORTALS)}"
+            )
+        result.append(PORTALS[name])
+    return result
 
 
 @click.group()
@@ -20,26 +39,38 @@ def cli():
 @cli.command()
 @click.option("--start-year", type=int, required=True, help="Start year")
 @click.option("--end-year", type=int, help="End year (default: current year)")
-def download(start_year, end_year):
-    """Download TED packages without importing to database.
+@click.option(
+    "--portal",
+    type=str,
+    default=None,
+    help="Comma-separated portal names (default: all)",
+)
+def download(start_year, end_year, portal):
+    """Download packages without importing to database.
 
     Skips packages that are already downloaded.
     """
     if end_year is None:
         end_year = datetime.now().year
-    for y in range(start_year, end_year + 1):
-        download_year(y)
+    for p in _resolve_portals(portal):
+        p.download(start_year, end_year)
 
 
 @cli.command(name="import")
 @click.option("--start-year", type=int, required=True, help="Start year")
 @click.option("--end-year", type=int, help="End year (default: current year)")
-def import_cmd(start_year, end_year):
-    """Import downloaded TED packages into the database."""
+@click.option(
+    "--portal",
+    type=str,
+    default=None,
+    help="Comma-separated portal names (default: all)",
+)
+def import_cmd(start_year, end_year, portal):
+    """Import downloaded packages into the database."""
     if end_year is None:
         end_year = datetime.now().year
-    for y in range(start_year, end_year + 1):
-        import_year(y)
+    for p in _resolve_portals(portal):
+        p.import_data(start_year, end_year)
     refresh_materialized_view()
 
 

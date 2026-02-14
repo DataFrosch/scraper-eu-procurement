@@ -1,5 +1,5 @@
 """
-Tests for scraper.py logic.
+Tests for db.py and portals/ted.py logic.
 """
 
 import pytest
@@ -10,23 +10,25 @@ from pathlib import Path
 from unittest.mock import Mock, patch
 from decimal import Decimal
 
-from sqlalchemy import create_engine, select
+from sqlalchemy import create_engine, select, text
 from sqlalchemy.orm import sessionmaker
 
-from tedawards.scraper import (
-    download_package,
-    get_package_files,
+from tedawards.db import (
     save_document,
     get_session,
+    _normalize_country_code,
+)
+from tedawards.portals.ted import (
+    download_package,
+    get_package_files,
     get_downloaded_packages,
     get_package_number,
     download_year,
     import_year,
-    _normalize_country_code,
 )
 from tedawards.models import (
     Base,
-    TEDDocument,
+    Document,
     ContractingBody,
     Contract,
     Award,
@@ -38,7 +40,7 @@ from tedawards.models import (
     contract_cpv_codes,
 )
 from tedawards.schema import (
-    TedAwardDataModel,
+    AwardDataModel,
     DocumentModel,
     ContractingBodyModel,
     ContractModel,
@@ -62,13 +64,16 @@ def temp_data_dir():
 def test_db():
     """Create a PostgreSQL test database with fresh tables for each test."""
     engine = create_engine(TEST_DATABASE_URL, echo=False)
-    Base.metadata.drop_all(engine)
+    with engine.connect() as conn:
+        conn.execute(text("DROP SCHEMA public CASCADE"))
+        conn.execute(text("CREATE SCHEMA public"))
+        conn.commit()
     Base.metadata.create_all(engine)
     SessionLocal = sessionmaker(bind=engine, expire_on_commit=False)
 
     with (
-        patch("tedawards.scraper.engine", engine),
-        patch("tedawards.scraper.SessionLocal", SessionLocal),
+        patch("tedawards.db.engine", engine),
+        patch("tedawards.db.SessionLocal", SessionLocal),
     ):
         yield engine
 
@@ -78,7 +83,7 @@ def test_db():
 @pytest.fixture
 def sample_award_data():
     """Create sample award data for testing."""
-    return TedAwardDataModel(
+    return AwardDataModel(
         document=DocumentModel(
             doc_id="12345-2024",
             edition="2024/S 001-000001",
@@ -251,14 +256,14 @@ class TestSaveDocument:
 
     def test_save_single_award(self, test_db, sample_award_data):
         """Test saving a single award to database."""
-        from tedawards.scraper import SessionLocal
+        from tedawards.db import SessionLocal
 
         assert save_document(sample_award_data) is True
 
         session = SessionLocal()
         try:
             doc = session.execute(
-                select(TEDDocument).where(TEDDocument.doc_id == "12345-2024")
+                select(Document).where(Document.doc_id == "12345-2024")
             ).scalar_one()
             assert doc.edition == "2024/S 001-000001"
             assert doc.contracting_body_id is not None
@@ -272,7 +277,7 @@ class TestSaveDocument:
             assert cb.nuts_code == "DE300"
 
             contract = session.execute(
-                select(Contract).where(Contract.ted_doc_id == "12345-2024")
+                select(Contract).where(Contract.doc_id == "12345-2024")
             ).scalar_one()
             assert contract.title == "Test Contract"
             assert contract.nuts_code == "DE212"
@@ -304,7 +309,7 @@ class TestSaveDocument:
 
     def test_save_duplicate_document_skipped(self, test_db, sample_award_data):
         """Test that duplicate documents are skipped (idempotent import)."""
-        from tedawards.scraper import SessionLocal
+        from tedawards.db import SessionLocal
 
         assert save_document(sample_award_data) is True
         assert save_document(sample_award_data) is False
@@ -312,7 +317,7 @@ class TestSaveDocument:
         session = SessionLocal()
         try:
             docs = session.execute(
-                select(TEDDocument).where(TEDDocument.doc_id == "12345-2024")
+                select(Document).where(Document.doc_id == "12345-2024")
             ).all()
             assert len(docs) == 1
         finally:
@@ -320,9 +325,9 @@ class TestSaveDocument:
 
     def test_save_same_contractor_deduplicated(self, test_db):
         """Test that same contractor in different documents creates one shared record."""
-        from tedawards.scraper import SessionLocal
+        from tedawards.db import SessionLocal
 
-        award_data_1 = TedAwardDataModel(
+        award_data_1 = AwardDataModel(
             document=DocumentModel(
                 doc_id="12345-2024",
                 edition="2024/S 001-000001",
@@ -344,7 +349,7 @@ class TestSaveDocument:
             ],
         )
 
-        award_data_2 = TedAwardDataModel(
+        award_data_2 = AwardDataModel(
             document=DocumentModel(
                 doc_id="67890-2024",
                 edition="2024/S 001-000002",
@@ -387,9 +392,9 @@ class TestSaveDocument:
 
     def test_save_multiple_awards_same_contract(self, test_db):
         """Test saving multiple awards for same contract."""
-        from tedawards.scraper import SessionLocal
+        from tedawards.db import SessionLocal
 
-        award_data = TedAwardDataModel(
+        award_data = AwardDataModel(
             document=DocumentModel(
                 doc_id="12345-2024",
                 edition="2024/S 001-000001",
@@ -437,14 +442,14 @@ class TestSaveDocument:
 
     def test_save_reimport_is_idempotent(self, test_db, sample_award_data):
         """Test that re-importing the same data is idempotent (skips existing docs)."""
-        from tedawards.scraper import SessionLocal
+        from tedawards.db import SessionLocal
 
         assert save_document(sample_award_data) is True
         assert save_document(sample_award_data) is False
 
         session = SessionLocal()
         try:
-            assert len(session.execute(select(TEDDocument)).all()) == 1
+            assert len(session.execute(select(Document)).all()) == 1
             assert len(session.execute(select(ContractingBody)).all()) == 1
             assert len(session.execute(select(Contract)).all()) == 1
             assert len(session.execute(select(Award)).all()) == 1
@@ -454,9 +459,9 @@ class TestSaveDocument:
 
     def test_contracting_body_deduplicated(self, test_db):
         """Test that identical contracting bodies across documents are deduplicated."""
-        from tedawards.scraper import SessionLocal
+        from tedawards.db import SessionLocal
 
-        award_data_1 = TedAwardDataModel(
+        award_data_1 = AwardDataModel(
             document=DocumentModel(
                 doc_id="12345-2024",
                 publication_date=date(2024, 1, 1),
@@ -469,7 +474,7 @@ class TestSaveDocument:
             awards=[AwardModel(contractors=[])],
         )
 
-        award_data_2 = TedAwardDataModel(
+        award_data_2 = AwardDataModel(
             document=DocumentModel(
                 doc_id="67890-2024",
                 publication_date=date(2024, 1, 15),
@@ -487,7 +492,7 @@ class TestSaveDocument:
 
         session = SessionLocal()
         try:
-            assert len(session.execute(select(TEDDocument)).all()) == 2
+            assert len(session.execute(select(Document)).all()) == 2
 
             # Only one contracting body row (deduplicated)
             cbs = session.execute(select(ContractingBody)).all()
@@ -495,10 +500,10 @@ class TestSaveDocument:
 
             # Both documents point to the same contracting body
             doc1 = session.execute(
-                select(TEDDocument).where(TEDDocument.doc_id == "12345-2024")
+                select(Document).where(Document.doc_id == "12345-2024")
             ).scalar_one()
             doc2 = session.execute(
-                select(TEDDocument).where(TEDDocument.doc_id == "67890-2024")
+                select(Document).where(Document.doc_id == "67890-2024")
             ).scalar_one()
             assert doc1.contracting_body_id == doc2.contracting_body_id
 
@@ -508,9 +513,9 @@ class TestSaveDocument:
 
     def test_different_contracting_bodies_not_deduplicated(self, test_db):
         """Test that contracting bodies with different fields remain separate."""
-        from tedawards.scraper import SessionLocal
+        from tedawards.db import SessionLocal
 
-        award_data_1 = TedAwardDataModel(
+        award_data_1 = AwardDataModel(
             document=DocumentModel(
                 doc_id="12345-2024",
                 publication_date=date(2024, 1, 1),
@@ -523,7 +528,7 @@ class TestSaveDocument:
             awards=[AwardModel(contractors=[])],
         )
 
-        award_data_2 = TedAwardDataModel(
+        award_data_2 = AwardDataModel(
             document=DocumentModel(
                 doc_id="67890-2024",
                 publication_date=date(2024, 1, 15),
@@ -548,9 +553,9 @@ class TestSaveDocument:
 
     def test_cpv_code_lookup_table_deduplication(self, test_db):
         """Test that same CPV code from two documents creates one lookup row."""
-        from tedawards.scraper import SessionLocal
+        from tedawards.db import SessionLocal
 
-        award_data_1 = TedAwardDataModel(
+        award_data_1 = AwardDataModel(
             document=DocumentModel(
                 doc_id="12345-2024",
                 publication_date=date(2024, 1, 1),
@@ -572,7 +577,7 @@ class TestSaveDocument:
             awards=[AwardModel(contractors=[])],
         )
 
-        award_data_2 = TedAwardDataModel(
+        award_data_2 = AwardDataModel(
             document=DocumentModel(
                 doc_id="67890-2024",
                 publication_date=date(2024, 1, 2),
@@ -613,10 +618,10 @@ class TestSaveDocument:
 
     def test_cpv_description_preserved_when_null(self, test_db):
         """Test that existing description is preserved when later doc has NULL description."""
-        from tedawards.scraper import SessionLocal
+        from tedawards.db import SessionLocal
 
         # First doc has description
-        award_data_1 = TedAwardDataModel(
+        award_data_1 = AwardDataModel(
             document=DocumentModel(
                 doc_id="12345-2024",
                 publication_date=date(2024, 1, 1),
@@ -639,7 +644,7 @@ class TestSaveDocument:
         )
 
         # Second doc has NULL description (e.g. eForms)
-        award_data_2 = TedAwardDataModel(
+        award_data_2 = AwardDataModel(
             document=DocumentModel(
                 doc_id="67890-2024",
                 publication_date=date(2024, 1, 2),
@@ -672,9 +677,9 @@ class TestSaveDocument:
 
     def test_procedure_type_lookup_table_deduplication(self, test_db):
         """Test that same procedure type from two documents creates one lookup row."""
-        from tedawards.scraper import SessionLocal
+        from tedawards.db import SessionLocal
 
-        award_data_1 = TedAwardDataModel(
+        award_data_1 = AwardDataModel(
             document=DocumentModel(
                 doc_id="12345-2024",
                 publication_date=date(2024, 1, 1),
@@ -692,7 +697,7 @@ class TestSaveDocument:
             awards=[AwardModel(contractors=[])],
         )
 
-        award_data_2 = TedAwardDataModel(
+        award_data_2 = AwardDataModel(
             document=DocumentModel(
                 doc_id="67890-2024",
                 publication_date=date(2024, 1, 2),
@@ -731,9 +736,9 @@ class TestSaveDocument:
 
     def test_procedure_type_description_preserved_when_null(self, test_db):
         """Test that existing description is preserved when later doc has NULL description."""
-        from tedawards.scraper import SessionLocal
+        from tedawards.db import SessionLocal
 
-        award_data_1 = TedAwardDataModel(
+        award_data_1 = AwardDataModel(
             document=DocumentModel(
                 doc_id="12345-2024",
                 publication_date=date(2024, 1, 1),
@@ -752,7 +757,7 @@ class TestSaveDocument:
         )
 
         # Second doc has NULL description (e.g. eForms)
-        award_data_2 = TedAwardDataModel(
+        award_data_2 = AwardDataModel(
             document=DocumentModel(
                 doc_id="67890-2024",
                 publication_date=date(2024, 1, 2),
@@ -784,9 +789,9 @@ class TestSaveDocument:
 
     def test_duplicate_cpv_code_deduplicated(self, test_db):
         """Test that duplicate CPV codes in list create one junction table row."""
-        from tedawards.scraper import SessionLocal
+        from tedawards.db import SessionLocal
 
-        award_data = TedAwardDataModel(
+        award_data = AwardDataModel(
             document=DocumentModel(
                 doc_id="12345-2024",
                 publication_date=date(2024, 1, 1),
@@ -821,7 +826,7 @@ class TestGetSession:
 
     def test_session_commits_on_success(self, test_db):
         """Test that session commits when no exception occurs."""
-        from tedawards.scraper import SessionLocal
+        from tedawards.db import SessionLocal
 
         # Need to create a contracting body first for the FK
         cb_session = SessionLocal()
@@ -832,7 +837,7 @@ class TestGetSession:
         cb_session.close()
 
         with get_session() as session:
-            doc = TEDDocument(
+            doc = Document(
                 doc_id="test-doc",
                 edition="2024/S 001-000001",
                 publication_date=date(2024, 1, 1),
@@ -844,7 +849,7 @@ class TestGetSession:
         verify_session = SessionLocal()
         try:
             result = verify_session.execute(
-                select(TEDDocument).where(TEDDocument.doc_id == "test-doc")
+                select(Document).where(Document.doc_id == "test-doc")
             ).scalar_one_or_none()
             assert result is not None
         finally:
@@ -852,7 +857,7 @@ class TestGetSession:
 
     def test_session_rolls_back_on_exception(self, test_db):
         """Test that session rolls back when exception occurs."""
-        from tedawards.scraper import SessionLocal
+        from tedawards.db import SessionLocal
 
         cb_session = SessionLocal()
         cb = ContractingBody(official_name="Test CB")
@@ -863,7 +868,7 @@ class TestGetSession:
 
         with pytest.raises(ValueError):
             with get_session() as session:
-                doc = TEDDocument(
+                doc = Document(
                     doc_id="test-doc",
                     edition="2024/S 001-000001",
                     publication_date=date(2024, 1, 1),
@@ -876,7 +881,7 @@ class TestGetSession:
         verify_session = SessionLocal()
         try:
             result = verify_session.execute(
-                select(TEDDocument).where(TEDDocument.doc_id == "test-doc")
+                select(Document).where(Document.doc_id == "test-doc")
             ).scalar_one_or_none()
             assert result is None
         finally:
@@ -991,7 +996,7 @@ class TestDownloadYear:
             requested_issues.append(issue)
             return False
 
-        with patch("tedawards.scraper.download_package", side_effect=mock_download):
+        with patch("tedawards.portals.ted.download_package", side_effect=mock_download):
             download_year(2024, max_issue=20, data_dir=temp_data_dir)
 
         assert requested_issues[0] == 1
@@ -1041,7 +1046,7 @@ class TestImportYear:
             imported_packages.append(package_num)
             return 0
 
-        with patch("tedawards.scraper.import_package", side_effect=mock_import):
+        with patch("tedawards.portals.ted.import_package", side_effect=mock_import):
             import_year(2024, temp_data_dir)
 
         assert imported_packages == [202400001, 202400002, 202400003]
@@ -1077,9 +1082,9 @@ class TestCountryLookupTable:
 
     def test_country_deduplication(self, test_db):
         """Two docs with same country code → one countries row."""
-        from tedawards.scraper import SessionLocal
+        from tedawards.db import SessionLocal
 
-        award_data_1 = TedAwardDataModel(
+        award_data_1 = AwardDataModel(
             document=DocumentModel(
                 doc_id="12345-2024",
                 publication_date=date(2024, 1, 1),
@@ -1092,7 +1097,7 @@ class TestCountryLookupTable:
             awards=[AwardModel(contractors=[])],
         )
 
-        award_data_2 = TedAwardDataModel(
+        award_data_2 = AwardDataModel(
             document=DocumentModel(
                 doc_id="67890-2024",
                 publication_date=date(2024, 1, 2),
@@ -1118,10 +1123,10 @@ class TestCountryLookupTable:
 
     def test_country_name_preserved(self, test_db):
         """Country name is preserved when a later doc doesn't provide one (COALESCE)."""
-        from tedawards.scraper import SessionLocal
+        from tedawards.db import SessionLocal
 
         # First doc creates country with name from pycountry
-        award_data_1 = TedAwardDataModel(
+        award_data_1 = AwardDataModel(
             document=DocumentModel(
                 doc_id="12345-2024",
                 publication_date=date(2024, 1, 1),
@@ -1135,7 +1140,7 @@ class TestCountryLookupTable:
         )
 
         # Second doc also references FR
-        award_data_2 = TedAwardDataModel(
+        award_data_2 = AwardDataModel(
             document=DocumentModel(
                 doc_id="67890-2024",
                 publication_date=date(2024, 1, 2),
@@ -1162,9 +1167,9 @@ class TestCountryLookupTable:
 
     def test_uk_normalized_to_gb_in_country_table(self, test_db):
         """UK country code is normalized to GB and stored in countries table."""
-        from tedawards.scraper import SessionLocal
+        from tedawards.db import SessionLocal
 
-        award_data = TedAwardDataModel(
+        award_data = AwardDataModel(
             document=DocumentModel(
                 doc_id="12345-2024",
                 publication_date=date(2024, 1, 1),
@@ -1201,7 +1206,7 @@ class TestCountryLookupTable:
 
             # All entities stored as GB
             doc = session.execute(
-                select(TEDDocument).where(TEDDocument.doc_id == "12345-2024")
+                select(Document).where(Document.doc_id == "12345-2024")
             ).scalar_one()
             assert doc.source_country == "GB"
 
@@ -1215,9 +1220,9 @@ class TestCountryLookupTable:
 
     def test_contractor_country_upserted(self, test_db):
         """Country from contractor is upserted into countries table."""
-        from tedawards.scraper import SessionLocal
+        from tedawards.db import SessionLocal
 
-        award_data = TedAwardDataModel(
+        award_data = AwardDataModel(
             document=DocumentModel(
                 doc_id="12345-2024",
                 publication_date=date(2024, 1, 1),

@@ -13,7 +13,7 @@ from pathlib import Path
 
 from tedawards.parsers import eforms_ubl
 from tedawards.schema import (
-    TedAwardDataModel,
+    AwardDataModel,
     DocumentModel,
     ContractingBodyModel,
     ContractModel,
@@ -47,7 +47,7 @@ class TestEFormsUBLParser:
 
         # Validate award data
         award_data = result[0]
-        assert isinstance(award_data, TedAwardDataModel)
+        assert isinstance(award_data, AwardDataModel)
 
         # Validate document
         document = award_data.document

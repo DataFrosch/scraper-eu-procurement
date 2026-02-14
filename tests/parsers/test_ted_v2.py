@@ -18,7 +18,7 @@ from datetime import date
 
 from tedawards.parsers import ted_v2
 from tedawards.schema import (
-    TedAwardDataModel,
+    AwardDataModel,
     DocumentModel,
     ContractingBodyModel,
     ContractModel,
@@ -61,7 +61,7 @@ class TestTedV2R207Parser:
 
         # Validate award data
         award_data = result[0]
-        assert isinstance(award_data, TedAwardDataModel)
+        assert isinstance(award_data, AwardDataModel)
 
         # Validate document
         document = award_data.document
@@ -165,7 +165,7 @@ class TestTedV2R208Parser:
 
         # Validate award data
         award_data = result[0]
-        assert isinstance(award_data, TedAwardDataModel)
+        assert isinstance(award_data, AwardDataModel)
 
         # Validate document
         document = award_data.document
@@ -258,7 +258,7 @@ class TestTedV2R209Parser:
 
         # Validate award data
         award_data = result[0]
-        assert isinstance(award_data, TedAwardDataModel)
+        assert isinstance(award_data, AwardDataModel)
 
         # Validate document
         document = award_data.document
@@ -342,7 +342,7 @@ class TestTedV2R209Parser:
 
         # Validate award data
         award_data = result[0]
-        assert isinstance(award_data, TedAwardDataModel)
+        assert isinstance(award_data, AwardDataModel)
 
         # Validate document
         document = award_data.document

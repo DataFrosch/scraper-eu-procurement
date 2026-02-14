@@ -9,7 +9,7 @@ Use `{{tag_name}}` in SQL. Wrap in `[[ ]]` to make the clause optional (omitted 
 ```sql
 SELECT * FROM awards a
 JOIN contracts c ON a.contract_id = c.id
-JOIN ted_documents d ON c.ted_doc_id = d.doc_id
+JOIN documents d ON c.doc_id = d.doc_id
 WHERE 1=1
   [[AND d.source_country = {{country}}]]
   [[AND EXTRACT(YEAR FROM d.publication_date) = {{year}}]]
@@ -183,7 +183,7 @@ Each dashcard has a `parameter_mappings` array connecting dashboard parameters t
     "database": DB_ID,
     "type": "native",
     "native": {
-      "query": "SELECT d.source_country, COUNT(*) as cnt FROM awards a JOIN contracts c ON a.contract_id = c.id JOIN ted_documents d ON c.ted_doc_id = d.doc_id WHERE 1=1 [[AND d.source_country = {{country}}]] GROUP BY 1 ORDER BY 2 DESC",
+      "query": "SELECT d.source_country, COUNT(*) as cnt FROM awards a JOIN contracts c ON a.contract_id = c.id JOIN documents d ON c.doc_id = d.doc_id WHERE 1=1 [[AND d.source_country = {{country}}]] GROUP BY 1 ORDER BY 2 DESC",
       "template-tags": {
         "country": {
           "id": "f1a2b3c4-0000-0000-0000-000000000001",

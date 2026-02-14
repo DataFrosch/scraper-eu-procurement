@@ -17,7 +17,7 @@ from typing import List, NamedTuple, Optional
 from lxml import etree
 
 from ..schema import (
-    TedAwardDataModel,
+    AwardDataModel,
     DocumentModel,
     ContractingBodyModel,
     ContractModel,
@@ -295,7 +295,7 @@ def _parse_optional_int(text: Optional[str], field_name: str) -> Optional[int]:
         return None
 
 
-def parse_xml_file(xml_file: Path) -> Optional[List[TedAwardDataModel]]:
+def parse_xml_file(xml_file: Path) -> Optional[List[AwardDataModel]]:
     """Parse TED 2.0 XML file and return structured data."""
     try:
         tree = etree.parse(xml_file)
@@ -327,7 +327,7 @@ def parse_xml_file(xml_file: Path) -> Optional[List[TedAwardDataModel]]:
             return None
 
         return [
-            TedAwardDataModel(
+            AwardDataModel(
                 document=document,
                 contracting_body=contracting_body,
                 contract=contract,

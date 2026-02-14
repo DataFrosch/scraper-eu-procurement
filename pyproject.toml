@@ -22,8 +22,8 @@ tedawards = "tedawards.main:cli"
 [tool.uv]
 package = true
 
-[tool.setuptools]
-packages = ["tedawards"]
+[tool.setuptools.packages.find]
+include = ["tedawards*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

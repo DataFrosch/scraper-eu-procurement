@@ -115,8 +115,8 @@ class AwardModel(BaseModel):
     )
 
 
-class TedAwardDataModel(BaseModel):
-    """Complete TED award data model - this is what all parsers should return."""
+class AwardDataModel(BaseModel):
+    """Complete award data model - this is what all parsers should return."""
 
     document: DocumentModel = Field(..., description="Document metadata")
     contracting_body: ContractingBodyModel = Field(

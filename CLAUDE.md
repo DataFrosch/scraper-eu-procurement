@@ -47,9 +47,9 @@ Coded values (procedure types, authority types, contract nature codes) use exact
 
 ## Database Architecture
 
-Schema in `models.py`, setup in `scraper.py`.
+Schema in `models.py`, setup in `db.py`.
 
-**Tables:** `ted_documents` (PK: `doc_id`), `contracts`, `awards`, `contracting_bodies`, `contractors`, `cpv_codes` (natural key: `code`), `procedure_types` (natural key: `code`), `authority_types` (natural key: `code`)
+**Tables:** `documents` (PK: `doc_id`), `contracts`, `awards`, `contracting_bodies`, `contractors`, `cpv_codes` (natural key: `code`), `procedure_types` (natural key: `code`), `authority_types` (natural key: `code`)
 
 **Junction tables:** `award_contractors`, `contract_cpv_codes`
 
@@ -57,10 +57,13 @@ Deduplication uses PostgreSQL upsert-returning (`INSERT ... ON CONFLICT DO UPDAT
 
 ## Code Organization
 
-- `main.py` - CLI interface (click commands: `download`, `import`)
-- `scraper.py` - Database setup, SQLAlchemy Core statements, session management
+- `main.py` - CLI interface (click commands: `download`, `import`, `update-rates`; `--portal` flag)
+- `db.py` - Database setup, SQLAlchemy Core statements, session management, materialized view
 - `models.py` - SQLAlchemy ORM models
 - `schema.py` - Pydantic models (parser output contract)
+- `portals/` - Per-source download/import logic
+  - `__init__.py` - Portal protocol and registry
+  - `ted.py` - TED Europa portal (download/import TED packages)
 - `parsers/` - Format-specific XML parsers
   - `__init__.py` - `try_parse_award()` entry point with format detection (reads first 3KB)
   - `ted_v2.py` - Unified TED 2.0 parser (all variants)
@@ -71,11 +74,15 @@ Deduplication uses PostgreSQL upsert-returning (`INSERT ... ON CONFLICT DO UPDAT
 ## Development Commands
 
 ```bash
-# Download/import packages
+# Download/import packages (all portals)
 uv run tedawards download --start-year 2024
 uv run tedawards download --start-year 2011 --end-year 2024
 uv run tedawards import --start-year 2024
 uv run tedawards import --start-year 2011 --end-year 2024
+
+# Limit to specific portal(s)
+uv run tedawards download --start-year 2024 --portal ted
+uv run tedawards import --start-year 2024 --portal ted
 
 # Docker services
 docker compose up -d                      # Main database (port 5432)

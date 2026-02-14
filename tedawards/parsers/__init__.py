@@ -5,11 +5,11 @@ TED XML parsers for contract award notices.
 from pathlib import Path
 from typing import List, Optional
 
-from ..schema import TedAwardDataModel
+from ..schema import AwardDataModel
 from . import ted_v2, eforms_ubl
 
 
-def try_parse_award(file_path: Path) -> Optional[List[TedAwardDataModel]]:
+def try_parse_award(file_path: Path) -> Optional[List[AwardDataModel]]:
     """Parse file if it's an award notice, return None otherwise.
 
     Reads first 3KB to detect format, then delegates to appropriate parser.

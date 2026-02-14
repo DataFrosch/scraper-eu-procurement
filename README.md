@@ -36,7 +36,7 @@ PostgreSQL 18 via Docker Compose, managed with SQLAlchemy ORM.
 
 ### Schema
 
-- `ted_documents` — Award notice metadata
+- `documents` — Award notice metadata
 - `contracting_bodies` — Buyer organizations (deduplicated lookup table)
 - `contracts` — Procurement contracts
 - `cpv_codes` / `contract_cpv_codes` — CPV classification codes and junction table
