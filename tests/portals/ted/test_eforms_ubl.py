@@ -211,7 +211,7 @@ class TestEFormsUBLParser:
         result = eforms_ubl.parse_xml_file(fixture_file)
         cb = result[0].contracting_body
         assert len(cb.identifiers) == 1
-        assert cb.identifiers[0].scheme == "ORG"
+        assert cb.identifiers[0].scheme is None
         assert cb.identifiers[0].identifier == "90004585"
 
     def test_parse_eforms_contractor_identifier(self):
@@ -220,8 +220,17 @@ class TestEFormsUBLParser:
         result = eforms_ubl.parse_xml_file(fixture_file)
         contractor = result[0].awards[0].contractors[0]
         assert len(contractor.identifiers) == 1
-        assert contractor.identifiers[0].scheme == "ORG"
+        assert contractor.identifiers[0].scheme is None
         assert contractor.identifiers[0].identifier == "12339040"
+
+    def test_parse_eforms_identifier_with_schemename(self):
+        """Test that schemeName attribute is extracted as scheme."""
+        fixture_file = FIXTURES_DIR / "eforms_ubl_2025_schemename.xml"
+        result = eforms_ubl.parse_xml_file(fixture_file)
+        cb = result[0].contracting_body
+        assert cb.identifiers[0].scheme == "ID_PLATAFORMA"
+        contractor = result[0].awards[0].contractors[0]
+        assert contractor.identifiers[0].scheme == "NIF"
 
     def test_parse_eforms_award_date_skips_placeholder(self):
         """Test that placeholder award date 2000-01-01 is skipped."""

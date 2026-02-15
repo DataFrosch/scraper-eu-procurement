@@ -373,7 +373,7 @@ class OrganizationIdentifier(Base):
     __tablename__ = "organization_identifiers"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    scheme: Mapped[str] = mapped_column(String, nullable=False)
+    scheme: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     identifier: Mapped[str] = mapped_column(String, nullable=False)
     contracting_body_id: Mapped[Optional[int]] = mapped_column(
         Integer, ForeignKey("contracting_bodies.id", ondelete="CASCADE"), nullable=True
@@ -392,12 +392,14 @@ class OrganizationIdentifier(Base):
             "identifier",
             "contracting_body_id",
             name="uq_org_id_cb",
+            postgresql_nulls_not_distinct=True,
         ),
         UniqueConstraint(
             "scheme",
             "identifier",
             "contractor_id",
             name="uq_org_id_ct",
+            postgresql_nulls_not_distinct=True,
         ),
         Index("idx_org_id_cb", "contracting_body_id"),
         Index("idx_org_id_ct", "contractor_id"),

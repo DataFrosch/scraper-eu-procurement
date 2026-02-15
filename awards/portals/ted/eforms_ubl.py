@@ -25,7 +25,7 @@ from ...schema import (
     IdentifierEntry,
 )
 from .ted_v2 import _normalize_contract_nature_code, _normalize_procedure_type
-from ...parsers.xml import first_text
+from ...parsers.xml import first_attr, first_text
 
 
 def _parse_date_eforms(text: Optional[str]) -> Optional[date]:
@@ -270,7 +270,15 @@ def _extract_contracting_body(
     )
     company_id = first_text(company_id_elem)
     if company_id:
-        identifiers.append(IdentifierEntry(scheme="ORG", identifier=company_id))
+        scheme = first_attr(company_id_elem, "schemeName")
+        scheme_id = first_attr(company_id_elem, "schemeID")
+        if scheme_id:
+            logger.warning(
+                "CompanyID has schemeID=%r (not part of eForms SDK), value=%r",
+                scheme_id,
+                company_id,
+            )
+        identifiers.append(IdentifierEntry(scheme=scheme, identifier=company_id))
 
     cb = ContractingBodyModel(
         official_name=first_text(name_elem) or "",
@@ -614,7 +622,15 @@ def _company_to_contractor(
     )
     company_id = first_text(company_id_elem)
     if company_id:
-        identifiers.append(IdentifierEntry(scheme="ORG", identifier=company_id))
+        scheme = first_attr(company_id_elem, "schemeName")
+        scheme_id = first_attr(company_id_elem, "schemeID")
+        if scheme_id:
+            logger.warning(
+                "CompanyID has schemeID=%r (not part of eForms SDK), value=%r",
+                scheme_id,
+                company_id,
+            )
+        identifiers.append(IdentifierEntry(scheme=scheme, identifier=company_id))
 
     return ContractorModel(
         official_name=official_name,

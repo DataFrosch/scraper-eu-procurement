@@ -39,7 +39,9 @@ class AuthorityTypeEntry(BaseModel):
 class IdentifierEntry(BaseModel):
     """Organization identifier (e.g. SIRET, VAT, KVK)."""
 
-    scheme: str = Field(..., description="Identifier scheme (e.g. 'FR-SIRET', 'ORG')")
+    scheme: Optional[str] = Field(
+        None, description="Identifier scheme (e.g. 'FR-SIRET', 'NIF')"
+    )
     identifier: str = Field(..., description="Identifier value")
 
 
