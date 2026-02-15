@@ -14,9 +14,10 @@
 
 ## Data Access
 
-- **Method**: REST API (Notices API + Public API)
-- **Format**: JSON, XML
-- **Auth**: Free API key (register on Azure APIM portal for each environment)
+- **Method**: REST API (Public API v2)
+- **Base URL**: `https://api.doffin.no/public/v2/`
+- **Format**: JSON (search), eForms UBL XML (download)
+- **Auth**: `Ocp-Apim-Subscription-Key` header; free key via https://dof-notices-prod-api.developer.azure-api.net/
 - **OCDS**: No
 
 ## Coverage
@@ -36,18 +37,32 @@ Norwegian
 
 ## Schema Mapping
 
-### Data Access Strategy
+### Data Access Strategy (Verified)
 
-Doffin provides two distinct APIs:
+**Public API v2** at `https://api.doffin.no/public/v2/` — two endpoints:
 
-1. **Notices API** (`dof-notices-prod-api`): Used to submit, validate, and translate notices. Mimics the TED API. Requires subscription approval (contact `ingunn.ostrem@dfo.no`). Includes:
-   - `GET doffin/notices/download/{when}` — returns all notices published on a given date as a **zip archive** containing eForms XML files
-   - `GET doffin/notices/monthly/{when}` — monthly zip archive (**restricted to DFO internal use**)
-2. **Public API v2** (`betaapi.doffin.no/public/v2`): Search and retrieve individual notices. Returns JSON metadata and full notice XML. No subscription approval needed (free API key only).
+1. **Search**: `GET /search` — paginated JSON search with filtering
+   ```
+   GET https://api.doffin.no/public/v2/search?type=RESULT&numHitsPerPage=100&page=1&issueDateFrom=2024-01-01&issueDateTo=2024-01-31
+   ```
+   - `type=RESULT` filters for award notices
+   - `numHitsPerPage` max 100, `page` for pagination
+   - `issueDateFrom`/`issueDateTo` in `yyyy-mm-dd` format
+   - `sortBy=PUBLICATION_DATE_ASC` or `PUBLICATION_DATE_DESC` (default)
+   - Also supports: `searchString`, `status`, `cpvCode`, `location`, `estimatedValueFrom`/`To`
+   - Returns `numHitsTotal`, `numHitsAccessible`, and `hits[]` array with notice ID, buyer, heading, lots with winners, CPV codes, etc.
 
-**Recommended approach**: Use the Notices API `download/{when}` endpoint to fetch daily zip archives of eForms XML, analogous to the TED daily package download. This aligns with the existing TED portal pattern (year-based iteration, archive extraction, per-file XML parsing).
+2. **Download**: `GET /download/{doffinId}` — returns raw eForms UBL XML
+   ```
+   GET https://api.doffin.no/public/v2/download/2024-101302
+   ```
+   - Notice IDs follow `YYYY-NNNNNN` format (e.g. `2024-101302`)
+   - Returns `<ContractAwardNotice>` XML directly (not zipped, not base64)
+   - Our existing `eforms_ubl.py` parser handles this format
 
-**Alternative approach**: Use the Public API v2 to search for notices by type and date range, then fetch individual notice XML. Better for selective retrieval but slower for bulk import.
+**Download strategy**: Search by date range with `type=RESULT`, paginate through all results, download XML for each notice ID. ~248 award notices per month (observed Jan 2024).
+
+**Note**: The Notices API (`dof-notices-prod-api`) also exists with daily zip archives (`GET doffin/notices/download/{when}`) but requires separate subscription approval. The Public API v2 is sufficient and already accessible.
 
 ### Data Format
 
@@ -58,19 +73,18 @@ Doffin provides two distinct APIs:
 
 ### Parsing Considerations
 
-- The zip archives from `download/{when}` contain individual XML files, one per notice (same pattern as TED `.tar.gz` archives)
-- Filter for `<ContractAwardNotice` root element to select award notices only, exactly as `try_parse_award()` already does
-- Norwegian notices will use Norwegian-language text for titles, descriptions, and organization names
-- The `{when}` parameter format for the download endpoint is not documented publicly; likely a date string (YYYY-MM-DD or similar) — **must be verified by calling the API or checking the Azure APIM portal swagger definition**
-- Currency will typically be `NOK` (Norwegian Krone) rather than EUR
-- NUTS codes will use the `NO` prefix (e.g., `NO081` for Telemark)
+- The download endpoint returns raw eForms UBL XML per notice (not zipped)
+- The search endpoint already filters by `type=RESULT`, so all downloaded notices are award-related — but the XML may be `ContractAwardNotice` or other subtypes; filter by root element as `try_parse_award()` does
+- Norwegian notices use Norwegian-language text for titles, descriptions, and organization names
+- Currency is `NOK` (Norwegian Krone)
+- NUTS codes use the `NO` prefix (e.g., `NO081`, `NO0A2`)
 - `source_country` will always be `NO`
 
 ### Field Mapping: DocumentModel
 
 | Schema Field | Portal Field/Path (eForms UBL XPath) | Notes |
 |---|---|---|
-| `doc_id` | Filename stem (e.g., `00654321_2024.xml` -> `00654321-2024`) | Same convention as TED eForms; normalize `_` to `-` |
+| `doc_id` | Doffin notice ID from search results (e.g., `2024-101302`) | Prefix with `NO-` to avoid collisions with TED doc_ids (e.g. `NO-2024-101302`) |
 | `edition` | Derived from `publication_date` as `{year}{day_of_year:03d}` | Synthetic, same as TED eForms parser |
 | `version` | Hardcode `"eForms-UBL"` | Or use a Doffin-specific marker like `"Doffin-eForms"` to distinguish from TED-sourced eForms |
 | `reception_id` | None | Doffin does not use TED reception IDs |
@@ -227,21 +241,17 @@ No Norwegian-specific mapping expected for these.
 
 ### Implementation Notes
 
-1. **Reuse `eforms_ubl.py`**: Since Doffin produces standard eForms UBL XML, the existing parser in `awards/portals/ted/eforms_ubl.py` should work with little to no modification. Consider extracting the eForms parsing logic into a shared module (e.g., `awards/parsers/eforms.py`) that both the TED and Doffin portals can use.
+1. **Reuse `eforms_ubl.py`**: Doffin returns standard eForms UBL XML. The existing parser in `awards/portals/ted/eforms_ubl.py` handles this format directly — verified against real Doffin XML.
 
 2. **Portal structure**: Follow the `TEDPortal` pattern:
    - `awards/portals/doffin/__init__.py` — entry point, re-exports
    - `awards/portals/doffin/portal.py` — `DoffinPortal` class implementing `download()` and `import_data()`
    - Register in `awards/portals/__init__.py` as `"doffin": DoffinPortal()`
 
-3. **Download strategy**: Iterate dates (not OJ issue numbers) since Doffin uses calendar dates for the `download/{when}` endpoint. Skip dates with no data (weekends/holidays will return empty or 404).
+3. **Download strategy**: Search by date range (`issueDateFrom`/`issueDateTo`), paginate through results (100 per page), download XML for each notice ID. No zip extraction needed — each download returns a single XML document.
 
-4. **Authentication**: API key via `Ocp-Apim-Subscription-Key` header (standard Azure APIM pattern). Store in environment variable (e.g., `DOFFIN_API_KEY`).
+4. **Authentication**: `Ocp-Apim-Subscription-Key` header. Store in `DOFFIN_API_KEY` env var.
 
-5. **doc_id namespacing**: Doffin notice IDs may overlap with TED notice IDs. Use a prefix like `DOFFIN-{id}` or `NO-{id}` to avoid primary key collisions in the `documents` table.
+5. **doc_id namespacing**: Prefix Doffin notice IDs with `NO-` (e.g. `NO-2024-101302`) to avoid collisions with TED doc_ids.
 
-6. **API documentation gap**: The exact Swagger/OpenAPI specification for the Doffin API is behind the Azure APIM portal login. The implementer should register for a free API key at https://dof-notices-dev-api.developer.azure-api.net/, then inspect the full API specification in the portal before coding. Key things to verify:
-   - Exact format of the `{when}` parameter in `download/{when}`
-   - Response format of the zip archive (flat XML files or nested directories)
-   - Rate limits and pagination parameters
-   - Whether `ContractAwardNotice` subtypes need filtering or all notice types are in one archive
+6. **Search response fields**: The search JSON includes useful metadata not in the XML: `receivedTenders`, `lots[].winner[]` with `organizationId` (Norwegian org numbers). These could supplement the XML parsing.
