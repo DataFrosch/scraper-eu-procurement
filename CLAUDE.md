@@ -15,7 +15,7 @@ Scraper for analyzing EU procurement contract awards from **2011 onwards**. Proc
 1. **Award-only focus**: Filter XML parsing to only process contract award notices
 2. **Environment configuration**: All DB settings via env vars (.env for dev, loaded via python-dotenv)
 3. **Year-based scraping**: Scrape by year, iterating through sequential OJ issue numbers (not calendar dates)
-4. **Raw source data with exact-match entity deduplication**: Store data as-is from TED documents. Contractors and contracting bodies go into shared lookup tables where only exact duplicates are merged (all fields must match). Fuzzy matching, outlier filtering, and entity resolution belong in a separate analysis layer.
+4. **Raw source data with exact-match entity deduplication**: Store data as-is from TED documents. All organizations (buyers and contractors) go into a single shared `organizations` lookup table where only exact duplicates are merged (all 6 address fields must match). Fuzzy matching, outlier filtering, and entity resolution belong in a separate analysis layer.
 5. **Pydantic as parser contract**: Pydantic models in `schema.py` define the interface between parsers and the database layer.
 6. **Fail-loud, no defaults, no fallbacks**: Only extract data directly from XML — missing data is `None`/`NULL`, never a default value. Errors bubble up loudly with the actual bad data value in the message. Code should reveal data quality issues, not paper over them.
 7. **Strict monetary parsing**: `parsers/monetary.py` has dedicated parsers for each locale-specific format. Formats are mutually exclusive — if multiple parsers match, it raises an error. Unparseable values log a warning and return None.
@@ -49,9 +49,11 @@ Coded values (procedure types, authority types, contract nature codes) use exact
 
 Schema in `models.py`, setup in `db.py`.
 
-**Tables:** `documents` (PK: `doc_id`), `contracts`, `awards`, `contracting_bodies`, `contractors`, `cpv_codes` (natural key: `code`), `procedure_types` (natural key: `code`), `authority_types` (natural key: `code`)
+**Tables:** `documents` (PK: `doc_id`), `contracts`, `awards`, `organizations` (unified buyers+contractors), `cpv_codes` (natural key: `code`), `procedure_types` (natural key: `code`), `authority_types` (natural key: `code`), `organization_identifiers`
 
-**Junction tables:** `award_contractors`, `contract_cpv_codes`
+**Junction tables:** `award_contractors` (award_id, organization_id), `contract_cpv_codes`
+
+**Key relationships:** `documents.buyer_organization_id` → `organizations.id`; `documents.buyer_authority_type_code` → `authority_types.code`; `documents.buyer_main_activity_code` stores the buyer's role per-notice (not on the org, since it's per-notice context).
 
 Deduplication uses PostgreSQL upsert-returning (`INSERT ... ON CONFLICT DO UPDATE ... RETURNING id`). Re-importing the same document is idempotent (skipped if doc_id exists).
 

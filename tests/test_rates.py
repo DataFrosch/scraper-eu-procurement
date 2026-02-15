@@ -15,7 +15,7 @@ from awards.models import (
     Award,
     Contract,
     Document,
-    ContractingBody,
+    Organization,
 )
 from awards.rates import (
     fetch_ecb_rates,
@@ -203,14 +203,14 @@ class TestGetAwardCurrencies:
         session = SessionLocal()
         try:
             # Create minimal data: contracting body -> document -> contract -> awards
-            cb = ContractingBody(official_name="Test CB")
+            cb = Organization(official_name="Test Org")
             session.add(cb)
             session.flush()
 
             doc = Document(
                 doc_id="test-1",
                 publication_date=date(2024, 1, 1),
-                contracting_body_id=cb.id,
+                buyer_organization_id=cb.id,
             )
             session.add(doc)
             session.flush()
@@ -241,13 +241,13 @@ class TestUpdateRates:
         # Seed an award so currencies are discovered
         session = SessionLocal()
         try:
-            cb = ContractingBody(official_name="Test CB")
+            cb = Organization(official_name="Test Org")
             session.add(cb)
             session.flush()
             doc = Document(
                 doc_id="test-1",
                 publication_date=date(2024, 1, 1),
-                contracting_body_id=cb.id,
+                buyer_organization_id=cb.id,
             )
             session.add(doc)
             session.flush()
@@ -315,13 +315,13 @@ class TestMaterializedView:
         # Seed data
         session = SessionLocal()
         try:
-            cb = ContractingBody(official_name="Test CB")
+            cb = Organization(official_name="Test Org")
             session.add(cb)
             session.flush()
             doc = Document(
                 doc_id="test-1",
                 publication_date=date(2024, 6, 15),
-                contracting_body_id=cb.id,
+                buyer_organization_id=cb.id,
             )
             session.add(doc)
             session.flush()
@@ -358,13 +358,13 @@ class TestMaterializedView:
                 ExchangeRate(currency="GBP", year=2024, month=6, rate=Decimal("0.85"))
             )
 
-            cb = ContractingBody(official_name="Test CB")
+            cb = Organization(official_name="Test Org")
             session.add(cb)
             session.flush()
             doc = Document(
                 doc_id="test-1",
                 publication_date=date(2024, 6, 15),
-                contracting_body_id=cb.id,
+                buyer_organization_id=cb.id,
             )
             session.add(doc)
             session.flush()
@@ -399,13 +399,13 @@ class TestMaterializedView:
             session.add(PriceIndex(year=2020, index_value=Decimal("100.0000")))
             session.add(PriceIndex(year=2024, index_value=Decimal("120.0000")))
 
-            cb = ContractingBody(official_name="Test CB")
+            cb = Organization(official_name="Test Org")
             session.add(cb)
             session.flush()
             doc = Document(
                 doc_id="test-1",
                 publication_date=date(2020, 3, 1),
-                contracting_body_id=cb.id,
+                buyer_organization_id=cb.id,
             )
             session.add(doc)
             session.flush()

@@ -8,7 +8,7 @@ The unified TED 2.0 parser handles multiple format variants:
 
 These tests validate:
 1. Document parsing (parse_xml_file)
-2. Data extraction (document, contracting body, contract, awards, contractors)
+2. Data extraction (document, buyer, contract, awards, contractors)
 3. Data validation using Pydantic models
 """
 
@@ -20,10 +20,9 @@ from awards.portals.ted import ted_v2
 from awards.schema import (
     AwardDataModel,
     DocumentModel,
-    ContractingBodyModel,
+    OrganizationModel,
     ContractModel,
     AwardModel,
-    ContractorModel,
 )
 
 
@@ -73,15 +72,11 @@ class TestTedV2R207Parser:
         assert document.version, f"Version should be present in {fixture_name}"
         assert "R2.0.7" in document.version or "R2.0.7/R2.0.8" in document.version
 
-        # Validate contracting body
-        contracting_body = award_data.contracting_body
-        assert isinstance(contracting_body, ContractingBodyModel)
-        assert contracting_body.official_name, (
-            f"Contracting body name should be present in {fixture_name}"
-        )
-        assert contracting_body.country_code, (
-            f"Country code should be present in {fixture_name}"
-        )
+        # Validate buyer
+        buyer = award_data.buyer
+        assert isinstance(buyer, OrganizationModel)
+        assert buyer.official_name, f"Buyer name should be present in {fixture_name}"
+        assert buyer.country_code, f"Country code should be present in {fixture_name}"
 
         # Validate contract
         contract = award_data.contract
@@ -98,7 +93,7 @@ class TestTedV2R207Parser:
         # Validate contractors if present
         if award.contractors:
             for contractor in award.contractors:
-                assert isinstance(contractor, ContractorModel)
+                assert isinstance(contractor, OrganizationModel)
                 assert contractor.official_name, (
                     f"Contractor name should be present in {fixture_name}"
                 )
@@ -130,10 +125,10 @@ class TestTedV2R207Parser:
         """Test authority type code is normalized from old '3' to 'ra'."""
         fixture_file = FIXTURES_DIR / "ted_v2_r2_0_7_2011.xml"
         result = ted_v2.parse_xml_file(fixture_file)
-        cb = result[0].contracting_body
-        assert cb.authority_type is not None
-        assert cb.authority_type.code == "ra"
-        assert cb.authority_type.description == "Regional authority"
+        doc = result[0].document
+        assert doc.buyer_authority_type is not None
+        assert doc.buyer_authority_type.code == "ra"
+        assert doc.buyer_authority_type.description == "Regional authority"
 
     def test_parse_r207_cpv_codes(self):
         """Test CPV code extraction for R2.0.7: main + additional with descriptions."""
@@ -177,15 +172,11 @@ class TestTedV2R208Parser:
         assert document.version, f"Version should be present in {fixture_name}"
         assert "R2.0.8" in document.version or "R2.0.7/R2.0.8" in document.version
 
-        # Validate contracting body
-        contracting_body = award_data.contracting_body
-        assert isinstance(contracting_body, ContractingBodyModel)
-        assert contracting_body.official_name, (
-            f"Contracting body name should be present in {fixture_name}"
-        )
-        assert contracting_body.country_code, (
-            f"Country code should be present in {fixture_name}"
-        )
+        # Validate buyer
+        buyer = award_data.buyer
+        assert isinstance(buyer, OrganizationModel)
+        assert buyer.official_name, f"Buyer name should be present in {fixture_name}"
+        assert buyer.country_code, f"Country code should be present in {fixture_name}"
 
         # Validate contract
         contract = award_data.contract
@@ -202,7 +193,7 @@ class TestTedV2R208Parser:
         # Validate contractors if present
         if award.contractors:
             for contractor in award.contractors:
-                assert isinstance(contractor, ContractorModel)
+                assert isinstance(contractor, OrganizationModel)
                 assert contractor.official_name, (
                     f"Contractor name should be present in {fixture_name}"
                 )
@@ -224,10 +215,10 @@ class TestTedV2R208Parser:
         """Test authority type code is normalized from old '3' to 'ra'."""
         fixture_file = FIXTURES_DIR / "ted_v2_r2_0_8_2015.xml"
         result = ted_v2.parse_xml_file(fixture_file)
-        cb = result[0].contracting_body
-        assert cb.authority_type is not None
-        assert cb.authority_type.code == "ra"
-        assert cb.authority_type.description == "Regional authority"
+        doc = result[0].document
+        assert doc.buyer_authority_type is not None
+        assert doc.buyer_authority_type.code == "ra"
+        assert doc.buyer_authority_type.description == "Regional authority"
 
     def test_parse_r208_cpv_codes(self):
         """Test CPV code extraction for R2.0.8: main + additional with descriptions."""
@@ -273,18 +264,20 @@ class TestTedV2R209Parser:
         assert document.version == "R2.0.9", "Version should be R2.0.9"
         assert document.source_country == "AT", "Source country should be Austria"
 
-        # Validate contracting body
-        contracting_body = award_data.contracting_body
-        assert isinstance(contracting_body, ContractingBodyModel)
-        assert contracting_body.official_name, "Contracting body name should be present"
-        assert "Medizinische Universität Innsbruck" in contracting_body.official_name
-        assert contracting_body.country_code == "AT", "Country code should be Austria"
-        assert contracting_body.town == "Innsbruck", "Town should be Innsbruck"
-        assert contracting_body.nuts_code == "AT332", "NUTS code should be AT332"
-        assert contracting_body.authority_type is not None
-        assert contracting_body.authority_type.code == "body-pl"
+        # Validate buyer
+        buyer = award_data.buyer
+        assert isinstance(buyer, OrganizationModel)
+        assert buyer.official_name, "Buyer name should be present"
+        assert "Medizinische Universität Innsbruck" in buyer.official_name
+        assert buyer.country_code == "AT", "Country code should be Austria"
+        assert buyer.town == "Innsbruck", "Town should be Innsbruck"
+        assert buyer.nuts_code == "AT332", "NUTS code should be AT332"
+
+        # Authority type now on document
+        assert document.buyer_authority_type is not None
+        assert document.buyer_authority_type.code == "body-pl"
         assert (
-            contracting_body.authority_type.description == "Body governed by public law"
+            document.buyer_authority_type.description == "Body governed by public law"
         )
 
         # Validate contract
@@ -321,7 +314,7 @@ class TestTedV2R209Parser:
         # Validate contractors
         assert len(award.contractors) > 0, "Should have at least one contractor"
         contractor = award.contractors[0]
-        assert isinstance(contractor, ContractorModel)
+        assert isinstance(contractor, OrganizationModel)
         assert contractor.official_name, "Contractor name should be present"
         assert "Hamilton Germany" in contractor.official_name, (
             "Contractor should be Hamilton Germany"
@@ -358,12 +351,10 @@ class TestTedV2R209Parser:
             f"Source country should be present in {fixture_name}"
         )
 
-        # Validate contracting body
-        contracting_body = award_data.contracting_body
-        assert isinstance(contracting_body, ContractingBodyModel)
-        assert contracting_body.official_name, (
-            f"Contracting body name should be present in {fixture_name}"
-        )
+        # Validate buyer
+        buyer = award_data.buyer
+        assert isinstance(buyer, OrganizationModel)
+        assert buyer.official_name, f"Buyer name should be present in {fixture_name}"
 
         # Validate contract
         contract = award_data.contract
@@ -430,13 +421,13 @@ class TestNewFields:
         assert result[0].contract.eu_funded is False
 
     def test_r208_nationalid_contracting_body(self):
-        """Test NATIONALID extraction from contracting body in R2.0.8."""
+        """Test NATIONALID extraction from buyer in R2.0.8."""
         fixture_file = FIXTURES_DIR / "ted_v2_r2_0_8_2015.xml"
         result = ted_v2.parse_xml_file(fixture_file)
-        cb = result[0].contracting_body
-        assert len(cb.identifiers) == 1
-        assert cb.identifiers[0].scheme is None
-        assert cb.identifiers[0].identifier == "233 5000 16000 40"
+        buyer = result[0].buyer
+        assert len(buyer.identifiers) == 1
+        assert buyer.identifiers[0].scheme is None
+        assert buyer.identifiers[0].identifier == "233 5000 16000 40"
 
     def test_r208_nationalid_contractor_absent(self):
         """Test contractors without NATIONALID have empty identifiers in R2.0.8."""
@@ -449,10 +440,10 @@ class TestNewFields:
         """Test NATIONALID extraction from ADDRESS_CONTRACTING_BODY in R2.0.9."""
         fixture_file = FIXTURES_DIR / "ted_v2_r2_0_9_nationalid.xml"
         result = ted_v2.parse_xml_file(fixture_file)
-        cb = result[0].contracting_body
-        assert len(cb.identifiers) == 1
-        assert cb.identifiers[0].scheme is None
-        assert cb.identifiers[0].identifier == "14503401"
+        buyer = result[0].buyer
+        assert len(buyer.identifiers) == 1
+        assert buyer.identifiers[0].scheme is None
+        assert buyer.identifiers[0].identifier == "14503401"
 
     def test_r209_nationalid_contractor(self):
         """Test NATIONALID extraction from ADDRESS_CONTRACTOR in R2.0.9."""
@@ -467,7 +458,7 @@ class TestNewFields:
         """Test documents without NATIONALID have empty identifiers."""
         fixture_file = FIXTURES_DIR / "ted_v2_r2_0_9_2024.xml"
         result = ted_v2.parse_xml_file(fixture_file)
-        assert result[0].contracting_body.identifiers == []
+        assert result[0].buyer.identifiers == []
         assert result[0].awards[0].contractors[0].identifiers == []
 
 
@@ -498,8 +489,8 @@ class TestDataValidation:
         # Check country codes
         if award_data.document.source_country:
             assert award_data.document.source_country.isupper()
-        if award_data.contracting_body.country_code:
-            assert award_data.contracting_body.country_code.isupper()
+        if award_data.buyer.country_code:
+            assert award_data.buyer.country_code.isupper()
 
         for award in award_data.awards:
             for contractor in award.contractors:

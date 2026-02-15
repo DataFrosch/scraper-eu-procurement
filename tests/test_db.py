@@ -18,10 +18,9 @@ from awards.db import (
 from awards.models import (
     Base,
     Document,
-    ContractingBody,
+    Organization,
     Contract,
     Award,
-    Contractor,
     CpvCode,
     Country,
     OrganizationIdentifier,
@@ -32,13 +31,12 @@ from awards.models import (
 from awards.schema import (
     AwardDataModel,
     DocumentModel,
-    ContractingBodyModel,
+    OrganizationModel,
     ContractModel,
     CpvCodeEntry,
     IdentifierEntry,
     ProcedureTypeEntry,
     AwardModel,
-    ContractorModel,
 )
 
 TEST_DATABASE_URL = "postgresql://awards:awards@localhost:5433/awards_test"
@@ -74,7 +72,7 @@ def sample_award_data():
             publication_date=date(2024, 1, 1),
             source_country="DE",
         ),
-        contracting_body=ContractingBodyModel(
+        buyer=OrganizationModel(
             official_name="Test Contracting Body",
             town="Berlin",
             country_code="DE",
@@ -93,7 +91,7 @@ def sample_award_data():
                 awarded_value_currency="EUR",
                 tenders_received=5,
                 contractors=[
-                    ContractorModel(
+                    OrganizationModel(
                         official_name="Test Contractor GmbH",
                         town="Munich",
                         country_code="DE",
@@ -120,15 +118,15 @@ class TestSaveDocument:
                 select(Document).where(Document.doc_id == "12345-2024")
             ).scalar_one()
             assert doc.edition == "2024/S 001-000001"
-            assert doc.contracting_body_id is not None
+            assert doc.buyer_organization_id is not None
 
-            cb = session.execute(
-                select(ContractingBody).where(
-                    ContractingBody.official_name == "Test Contracting Body"
+            buyer = session.execute(
+                select(Organization).where(
+                    Organization.official_name == "Test Contracting Body"
                 )
             ).scalar_one()
-            assert doc.contracting_body_id == cb.id
-            assert cb.nuts_code == "DE300"
+            assert doc.buyer_organization_id == buyer.id
+            assert buyer.nuts_code == "DE300"
 
             contract = session.execute(
                 select(Contract).where(Contract.doc_id == "12345-2024")
@@ -143,8 +141,8 @@ class TestSaveDocument:
             assert award.tenders_received == 5
 
             contractor = session.execute(
-                select(Contractor).where(
-                    Contractor.official_name == "Test Contractor GmbH"
+                select(Organization).where(
+                    Organization.official_name == "Test Contractor GmbH"
                 )
             ).scalar_one()
             assert contractor.country_code == "DE"
@@ -154,7 +152,7 @@ class TestSaveDocument:
             link = session.execute(
                 select(award_contractors).where(
                     award_contractors.c.award_id == award.id,
-                    award_contractors.c.contractor_id == contractor.id,
+                    award_contractors.c.organization_id == contractor.id,
                 )
             ).one()
             assert link is not None
@@ -188,14 +186,12 @@ class TestSaveDocument:
                 publication_date=date(2024, 1, 1),
                 source_country="DE",
             ),
-            contracting_body=ContractingBodyModel(
-                official_name="Test Body 1", country_code="DE"
-            ),
+            buyer=OrganizationModel(official_name="Test Body 1", country_code="DE"),
             contract=ContractModel(title="Contract 1"),
             awards=[
                 AwardModel(
                     contractors=[
-                        ContractorModel(
+                        OrganizationModel(
                             official_name="Shared Contractor Ltd", country_code="GB"
                         )
                     ]
@@ -210,14 +206,12 @@ class TestSaveDocument:
                 publication_date=date(2024, 1, 2),
                 source_country="FR",
             ),
-            contracting_body=ContractingBodyModel(
-                official_name="Test Body 2", country_code="FR"
-            ),
+            buyer=OrganizationModel(official_name="Test Body 2", country_code="FR"),
             contract=ContractModel(title="Contract 2"),
             awards=[
                 AwardModel(
                     contractors=[
-                        ContractorModel(
+                        OrganizationModel(
                             official_name="Shared Contractor Ltd", country_code="GB"
                         )
                     ]
@@ -230,10 +224,10 @@ class TestSaveDocument:
 
         session = SessionLocal()
         try:
-            # Only one contractor row (deduplicated)
+            # Only one org row for the contractor (deduplicated)
             contractors = session.execute(
-                select(Contractor).where(
-                    Contractor.official_name == "Shared Contractor Ltd"
+                select(Organization).where(
+                    Organization.official_name == "Shared Contractor Ltd"
                 )
             ).all()
             assert len(contractors) == 1
@@ -255,9 +249,7 @@ class TestSaveDocument:
                 publication_date=date(2024, 1, 1),
                 source_country="DE",
             ),
-            contracting_body=ContractingBodyModel(
-                official_name="Test Body", country_code="DE"
-            ),
+            buyer=OrganizationModel(official_name="Test Body", country_code="DE"),
             contract=ContractModel(title="Multi-lot Contract"),
             awards=[
                 AwardModel(
@@ -265,7 +257,9 @@ class TestSaveDocument:
                     awarded_value=10000.0,
                     awarded_value_currency="EUR",
                     contractors=[
-                        ContractorModel(official_name="Contractor A", country_code="DE")
+                        OrganizationModel(
+                            official_name="Contractor A", country_code="DE"
+                        )
                     ],
                 ),
                 AwardModel(
@@ -273,7 +267,9 @@ class TestSaveDocument:
                     awarded_value=20000.0,
                     awarded_value_currency="EUR",
                     contractors=[
-                        ContractorModel(official_name="Contractor B", country_code="FR")
+                        OrganizationModel(
+                            official_name="Contractor B", country_code="FR"
+                        )
                     ],
                 ),
             ],
@@ -286,8 +282,9 @@ class TestSaveDocument:
             awards = session.execute(select(Award)).all()
             assert len(awards) == 2
 
-            contractors = session.execute(select(Contractor)).all()
-            assert len(contractors) == 2
+            # 3 orgs total: buyer + 2 contractors
+            orgs = session.execute(select(Organization)).all()
+            assert len(orgs) == 3
 
             links = session.execute(select(award_contractors)).all()
             assert len(links) == 2
@@ -304,15 +301,15 @@ class TestSaveDocument:
         session = SessionLocal()
         try:
             assert len(session.execute(select(Document)).all()) == 1
-            assert len(session.execute(select(ContractingBody)).all()) == 1
+            # 2 orgs: buyer + contractor
+            assert len(session.execute(select(Organization)).all()) == 2
             assert len(session.execute(select(Contract)).all()) == 1
             assert len(session.execute(select(Award)).all()) == 1
-            assert len(session.execute(select(Contractor)).all()) == 1
         finally:
             session.close()
 
-    def test_contracting_body_deduplicated(self, test_db):
-        """Test that identical contracting bodies across documents are deduplicated."""
+    def test_buyer_deduplicated(self, test_db):
+        """Test that identical buyers across documents are deduplicated."""
         from awards.db import SessionLocal
 
         award_data_1 = AwardDataModel(
@@ -321,7 +318,7 @@ class TestSaveDocument:
                 publication_date=date(2024, 1, 1),
                 source_country="DE",
             ),
-            contracting_body=ContractingBodyModel(
+            buyer=OrganizationModel(
                 official_name="Ministry of Health", country_code="DE", town="Berlin"
             ),
             contract=ContractModel(title="Medical Supplies Contract 2024"),
@@ -334,7 +331,7 @@ class TestSaveDocument:
                 publication_date=date(2024, 1, 15),
                 source_country="DE",
             ),
-            contracting_body=ContractingBodyModel(
+            buyer=OrganizationModel(
                 official_name="Ministry of Health", country_code="DE", town="Berlin"
             ),
             contract=ContractModel(title="IT Services Contract 2024"),
@@ -348,25 +345,29 @@ class TestSaveDocument:
         try:
             assert len(session.execute(select(Document)).all()) == 2
 
-            # Only one contracting body row (deduplicated)
-            cbs = session.execute(select(ContractingBody)).all()
-            assert len(cbs) == 1
+            # Only one org row (deduplicated)
+            orgs = session.execute(
+                select(Organization).where(
+                    Organization.official_name == "Ministry of Health"
+                )
+            ).all()
+            assert len(orgs) == 1
 
-            # Both documents point to the same contracting body
+            # Both documents point to the same buyer organization
             doc1 = session.execute(
                 select(Document).where(Document.doc_id == "12345-2024")
             ).scalar_one()
             doc2 = session.execute(
                 select(Document).where(Document.doc_id == "67890-2024")
             ).scalar_one()
-            assert doc1.contracting_body_id == doc2.contracting_body_id
+            assert doc1.buyer_organization_id == doc2.buyer_organization_id
 
             assert len(session.execute(select(Contract)).all()) == 2
         finally:
             session.close()
 
-    def test_different_contracting_bodies_not_deduplicated(self, test_db):
-        """Test that contracting bodies with different fields remain separate."""
+    def test_different_buyers_not_deduplicated(self, test_db):
+        """Test that buyers with different fields remain separate."""
         from awards.db import SessionLocal
 
         award_data_1 = AwardDataModel(
@@ -375,7 +376,7 @@ class TestSaveDocument:
                 publication_date=date(2024, 1, 1),
                 source_country="DE",
             ),
-            contracting_body=ContractingBodyModel(
+            buyer=OrganizationModel(
                 official_name="Ministry of Health", country_code="DE", town="Berlin"
             ),
             contract=ContractModel(title="Contract 1"),
@@ -388,7 +389,7 @@ class TestSaveDocument:
                 publication_date=date(2024, 1, 15),
                 source_country="FR",
             ),
-            contracting_body=ContractingBodyModel(
+            buyer=OrganizationModel(
                 official_name="Ministry of Health", country_code="FR", town="Paris"
             ),
             contract=ContractModel(title="Contract 2"),
@@ -400,8 +401,12 @@ class TestSaveDocument:
 
         session = SessionLocal()
         try:
-            cbs = session.execute(select(ContractingBody)).all()
-            assert len(cbs) == 2
+            orgs = session.execute(
+                select(Organization).where(
+                    Organization.official_name == "Ministry of Health"
+                )
+            ).all()
+            assert len(orgs) == 2
         finally:
             session.close()
 
@@ -415,9 +420,7 @@ class TestSaveDocument:
                 publication_date=date(2024, 1, 1),
                 source_country="DE",
             ),
-            contracting_body=ContractingBodyModel(
-                official_name="Body 1", country_code="DE"
-            ),
+            buyer=OrganizationModel(official_name="Body 1", country_code="DE"),
             contract=ContractModel(
                 title="Contract 1",
                 main_cpv_code="45000000",
@@ -437,9 +440,7 @@ class TestSaveDocument:
                 publication_date=date(2024, 1, 2),
                 source_country="FR",
             ),
-            contracting_body=ContractingBodyModel(
-                official_name="Body 2", country_code="FR"
-            ),
+            buyer=OrganizationModel(official_name="Body 2", country_code="FR"),
             contract=ContractModel(
                 title="Contract 2",
                 main_cpv_code="45000000",
@@ -481,9 +482,7 @@ class TestSaveDocument:
                 publication_date=date(2024, 1, 1),
                 source_country="DE",
             ),
-            contracting_body=ContractingBodyModel(
-                official_name="Body 1", country_code="DE"
-            ),
+            buyer=OrganizationModel(official_name="Body 1", country_code="DE"),
             contract=ContractModel(
                 title="Contract 1",
                 main_cpv_code="45000000",
@@ -504,9 +503,7 @@ class TestSaveDocument:
                 publication_date=date(2024, 1, 2),
                 source_country="FR",
             ),
-            contracting_body=ContractingBodyModel(
-                official_name="Body 2", country_code="FR"
-            ),
+            buyer=OrganizationModel(official_name="Body 2", country_code="FR"),
             contract=ContractModel(
                 title="Contract 2",
                 main_cpv_code="45000000",
@@ -539,9 +536,7 @@ class TestSaveDocument:
                 publication_date=date(2024, 1, 1),
                 source_country="DE",
             ),
-            contracting_body=ContractingBodyModel(
-                official_name="Body 1", country_code="DE"
-            ),
+            buyer=OrganizationModel(official_name="Body 1", country_code="DE"),
             contract=ContractModel(
                 title="Contract 1",
                 procedure_type=ProcedureTypeEntry(
@@ -557,9 +552,7 @@ class TestSaveDocument:
                 publication_date=date(2024, 1, 2),
                 source_country="FR",
             ),
-            contracting_body=ContractingBodyModel(
-                official_name="Body 2", country_code="FR"
-            ),
+            buyer=OrganizationModel(official_name="Body 2", country_code="FR"),
             contract=ContractModel(
                 title="Contract 2",
                 procedure_type=ProcedureTypeEntry(
@@ -598,9 +591,7 @@ class TestSaveDocument:
                 publication_date=date(2024, 1, 1),
                 source_country="DE",
             ),
-            contracting_body=ContractingBodyModel(
-                official_name="Body 1", country_code="DE"
-            ),
+            buyer=OrganizationModel(official_name="Body 1", country_code="DE"),
             contract=ContractModel(
                 title="Contract 1",
                 procedure_type=ProcedureTypeEntry(
@@ -617,9 +608,7 @@ class TestSaveDocument:
                 publication_date=date(2024, 1, 2),
                 source_country="FR",
             ),
-            contracting_body=ContractingBodyModel(
-                official_name="Body 2", country_code="FR"
-            ),
+            buyer=OrganizationModel(official_name="Body 2", country_code="FR"),
             contract=ContractModel(
                 title="Contract 2",
                 procedure_type=ProcedureTypeEntry(code="open", description=None),
@@ -651,9 +640,7 @@ class TestSaveDocument:
                 publication_date=date(2024, 1, 1),
                 source_country="DE",
             ),
-            contracting_body=ContractingBodyModel(
-                official_name="Body 1", country_code="DE"
-            ),
+            buyer=OrganizationModel(official_name="Body 1", country_code="DE"),
             contract=ContractModel(
                 title="Contract 1",
                 main_cpv_code="50750000",
@@ -682,20 +669,20 @@ class TestGetSession:
         """Test that session commits when no exception occurs."""
         from awards.db import SessionLocal
 
-        # Need to create a contracting body first for the FK
-        cb_session = SessionLocal()
-        cb = ContractingBody(official_name="Test CB")
-        cb_session.add(cb)
-        cb_session.commit()
-        cb_id = cb.id
-        cb_session.close()
+        # Need to create an organization first for the FK
+        org_session = SessionLocal()
+        org = Organization(official_name="Test Org")
+        org_session.add(org)
+        org_session.commit()
+        org_id = org.id
+        org_session.close()
 
         with get_session() as session:
             doc = Document(
                 doc_id="test-doc",
                 edition="2024/S 001-000001",
                 publication_date=date(2024, 1, 1),
-                contracting_body_id=cb_id,
+                buyer_organization_id=org_id,
             )
             session.add(doc)
 
@@ -713,12 +700,12 @@ class TestGetSession:
         """Test that session rolls back when exception occurs."""
         from awards.db import SessionLocal
 
-        cb_session = SessionLocal()
-        cb = ContractingBody(official_name="Test CB")
-        cb_session.add(cb)
-        cb_session.commit()
-        cb_id = cb.id
-        cb_session.close()
+        org_session = SessionLocal()
+        org = Organization(official_name="Test Org")
+        org_session.add(org)
+        org_session.commit()
+        org_id = org.id
+        org_session.close()
 
         with pytest.raises(ValueError):
             with get_session() as session:
@@ -726,7 +713,7 @@ class TestGetSession:
                     doc_id="test-doc",
                     edition="2024/S 001-000001",
                     publication_date=date(2024, 1, 1),
-                    contracting_body_id=cb_id,
+                    buyer_organization_id=org_id,
                 )
                 session.add(doc)
                 raise ValueError("Test error")
@@ -780,9 +767,7 @@ class TestCountryLookupTable:
                 publication_date=date(2024, 1, 1),
                 source_country="DE",
             ),
-            contracting_body=ContractingBodyModel(
-                official_name="Body 1", country_code="DE"
-            ),
+            buyer=OrganizationModel(official_name="Body 1", country_code="DE"),
             contract=ContractModel(title="Contract 1"),
             awards=[AwardModel(contractors=[])],
         )
@@ -793,9 +778,7 @@ class TestCountryLookupTable:
                 publication_date=date(2024, 1, 2),
                 source_country="DE",
             ),
-            contracting_body=ContractingBodyModel(
-                official_name="Body 2", country_code="DE"
-            ),
+            buyer=OrganizationModel(official_name="Body 2", country_code="DE"),
             contract=ContractModel(title="Contract 2"),
             awards=[AwardModel(contractors=[])],
         )
@@ -822,9 +805,7 @@ class TestCountryLookupTable:
                 publication_date=date(2024, 1, 1),
                 source_country="FR",
             ),
-            contracting_body=ContractingBodyModel(
-                official_name="Body 1", country_code="FR"
-            ),
+            buyer=OrganizationModel(official_name="Body 1", country_code="FR"),
             contract=ContractModel(title="Contract 1"),
             awards=[AwardModel(contractors=[])],
         )
@@ -836,9 +817,7 @@ class TestCountryLookupTable:
                 publication_date=date(2024, 1, 2),
                 source_country="FR",
             ),
-            contracting_body=ContractingBodyModel(
-                official_name="Body 2", country_code="FR"
-            ),
+            buyer=OrganizationModel(official_name="Body 2", country_code="FR"),
             contract=ContractModel(title="Contract 2"),
             awards=[AwardModel(contractors=[])],
         )
@@ -865,14 +844,12 @@ class TestCountryLookupTable:
                 publication_date=date(2024, 1, 1),
                 source_country="UK",
             ),
-            contracting_body=ContractingBodyModel(
-                official_name="Body 1", country_code="UK"
-            ),
+            buyer=OrganizationModel(official_name="Body 1", country_code="UK"),
             contract=ContractModel(title="Contract 1"),
             awards=[
                 AwardModel(
                     contractors=[
-                        ContractorModel(official_name="UK Ltd", country_code="UK")
+                        OrganizationModel(official_name="UK Ltd", country_code="UK")
                     ]
                 )
             ],
@@ -900,10 +877,16 @@ class TestCountryLookupTable:
             ).scalar_one()
             assert doc.source_country == "GB"
 
-            cb = session.execute(select(ContractingBody)).scalar_one()
-            assert cb.country_code == "GB"
+            # Buyer org stored as GB
+            buyer = session.execute(
+                select(Organization).where(Organization.official_name == "Body 1")
+            ).scalar_one()
+            assert buyer.country_code == "GB"
 
-            ct = session.execute(select(Contractor)).scalar_one()
+            # Contractor org stored as GB
+            ct = session.execute(
+                select(Organization).where(Organization.official_name == "UK Ltd")
+            ).scalar_one()
             assert ct.country_code == "GB"
         finally:
             session.close()
@@ -918,14 +901,12 @@ class TestCountryLookupTable:
                 publication_date=date(2024, 1, 1),
                 source_country="DE",
             ),
-            contracting_body=ContractingBodyModel(
-                official_name="Body 1", country_code="DE"
-            ),
+            buyer=OrganizationModel(official_name="Body 1", country_code="DE"),
             contract=ContractModel(title="Contract 1"),
             awards=[
                 AwardModel(
                     contractors=[
-                        ContractorModel(official_name="Polish Co", country_code="PL")
+                        OrganizationModel(official_name="Polish Co", country_code="PL")
                     ]
                 )
             ],
@@ -955,9 +936,7 @@ class TestNewFields:
                 publication_date=date(2024, 1, 1),
                 source_country="DE",
             ),
-            contracting_body=ContractingBodyModel(
-                official_name="Body 1", country_code="DE"
-            ),
+            buyer=OrganizationModel(official_name="Body 1", country_code="DE"),
             contract=ContractModel(title="Contract 1"),
             awards=[
                 AwardModel(
@@ -993,9 +972,7 @@ class TestNewFields:
                 publication_date=date(2024, 1, 1),
                 source_country="DE",
             ),
-            contracting_body=ContractingBodyModel(
-                official_name="Body 1", country_code="DE"
-            ),
+            buyer=OrganizationModel(official_name="Body 1", country_code="DE"),
             contract=ContractModel(
                 title="Contract 1",
                 estimated_value=Decimal("500000.00"),
@@ -1028,9 +1005,7 @@ class TestNewFields:
                 publication_date=date(2024, 1, 1),
                 source_country="DE",
             ),
-            contracting_body=ContractingBodyModel(
-                official_name="Body 1", country_code="DE"
-            ),
+            buyer=OrganizationModel(official_name="Body 1", country_code="DE"),
             contract=ContractModel(title="Contract 1"),
             awards=[AwardModel(contractors=[])],
         )
@@ -1049,8 +1024,8 @@ class TestNewFields:
 class TestOrganizationIdentifiers:
     """Tests for organization identifier storage."""
 
-    def test_contracting_body_identifiers_stored(self, test_db):
-        """Test that contracting body identifiers are stored."""
+    def test_buyer_identifiers_stored(self, test_db):
+        """Test that buyer organization identifiers are stored."""
         from awards.db import SessionLocal
 
         award_data = AwardDataModel(
@@ -1059,7 +1034,7 @@ class TestOrganizationIdentifiers:
                 publication_date=date(2024, 1, 1),
                 source_country="DE",
             ),
-            contracting_body=ContractingBodyModel(
+            buyer=OrganizationModel(
                 official_name="Body 1",
                 country_code="DE",
                 identifiers=[
@@ -1079,8 +1054,7 @@ class TestOrganizationIdentifiers:
             org_id = org_ids[0][0]
             assert org_id.scheme == "ORG"
             assert org_id.identifier == "90004585"
-            assert org_id.contracting_body_id is not None
-            assert org_id.contractor_id is None
+            assert org_id.organization_id is not None
         finally:
             session.close()
 
@@ -1094,14 +1068,12 @@ class TestOrganizationIdentifiers:
                 publication_date=date(2024, 1, 1),
                 source_country="DE",
             ),
-            contracting_body=ContractingBodyModel(
-                official_name="Body 1", country_code="DE"
-            ),
+            buyer=OrganizationModel(official_name="Body 1", country_code="DE"),
             contract=ContractModel(title="Contract 1"),
             awards=[
                 AwardModel(
                     contractors=[
-                        ContractorModel(
+                        OrganizationModel(
                             official_name="Contractor A",
                             country_code="DE",
                             identifiers=[
@@ -1122,8 +1094,7 @@ class TestOrganizationIdentifiers:
             org_id = org_ids[0][0]
             assert org_id.scheme == "ORG"
             assert org_id.identifier == "12339040"
-            assert org_id.contractor_id is not None
-            assert org_id.contracting_body_id is None
+            assert org_id.organization_id is not None
         finally:
             session.close()
 
@@ -1131,7 +1102,7 @@ class TestOrganizationIdentifiers:
         """Test that duplicate identifiers are not inserted twice."""
         from awards.db import SessionLocal
 
-        cb = ContractingBodyModel(
+        buyer = OrganizationModel(
             official_name="Body 1",
             country_code="DE",
             identifiers=[
@@ -1145,7 +1116,7 @@ class TestOrganizationIdentifiers:
                 publication_date=date(2024, 1, 1),
                 source_country="DE",
             ),
-            contracting_body=cb,
+            buyer=buyer,
             contract=ContractModel(title="Contract 1"),
             awards=[AwardModel(contractors=[])],
         )
@@ -1156,7 +1127,7 @@ class TestOrganizationIdentifiers:
                 publication_date=date(2024, 1, 2),
                 source_country="DE",
             ),
-            contracting_body=cb,
+            buyer=buyer,
             contract=ContractModel(title="Contract 2"),
             awards=[AwardModel(contractors=[])],
         )
@@ -1166,7 +1137,7 @@ class TestOrganizationIdentifiers:
 
         session = SessionLocal()
         try:
-            # Same CB with same identifier -> only one org identifier row
+            # Same org with same identifier -> only one org identifier row
             org_ids = session.execute(select(OrganizationIdentifier)).all()
             assert len(org_ids) == 1
         finally:

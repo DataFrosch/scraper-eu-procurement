@@ -9,6 +9,36 @@ from typing import List, Optional
 from pydantic import BaseModel, Field, field_validator
 
 
+class AuthorityTypeEntry(BaseModel):
+    """Authority type entry."""
+
+    code: str = Field(..., description="Authority type code")
+    description: Optional[str] = Field(None, description="Authority type description")
+
+
+class IdentifierEntry(BaseModel):
+    """Organization identifier (e.g. SIRET, VAT, KVK)."""
+
+    scheme: Optional[str] = Field(
+        None, description="Identifier scheme (e.g. 'FR-SIRET', 'NIF')"
+    )
+    identifier: str = Field(..., description="Identifier value")
+
+
+class OrganizationModel(BaseModel):
+    """Unified organization model for both buyers and contractors."""
+
+    official_name: str = Field(..., description="Official name of organization")
+    address: Optional[str] = Field(None, description="Address")
+    town: Optional[str] = Field(None, description="Town/city")
+    postal_code: Optional[str] = Field(None, description="Postal code")
+    country_code: Optional[str] = Field(None, description="Country code")
+    nuts_code: Optional[str] = Field(None, description="NUTS region code")
+    identifiers: List[IdentifierEntry] = Field(
+        default_factory=list, description="Organization identifiers"
+    )
+
+
 class DocumentModel(BaseModel):
     """Document metadata model."""
 
@@ -26,40 +56,12 @@ class DocumentModel(BaseModel):
     phone: Optional[str] = Field(None, description="Phone number")
     email: Optional[str] = Field(None, description="Email address")
     url_general: Optional[str] = Field(None, description="General URL")
-    url_buyer: Optional[str] = Field(None, description="Buyer profile URL")
-
-
-class AuthorityTypeEntry(BaseModel):
-    """Authority type entry."""
-
-    code: str = Field(..., description="Authority type code")
-    description: Optional[str] = Field(None, description="Authority type description")
-
-
-class IdentifierEntry(BaseModel):
-    """Organization identifier (e.g. SIRET, VAT, KVK)."""
-
-    scheme: Optional[str] = Field(
-        None, description="Identifier scheme (e.g. 'FR-SIRET', 'NIF')"
+    buyer_url: Optional[str] = Field(None, description="Buyer profile URL")
+    buyer_authority_type: Optional[AuthorityTypeEntry] = Field(
+        None, description="Authority type of the buyer"
     )
-    identifier: str = Field(..., description="Identifier value")
-
-
-class ContractingBodyModel(BaseModel):
-    """Contracting body model."""
-
-    official_name: str = Field(..., description="Official name of contracting body")
-    address: Optional[str] = Field(None, description="Address")
-    town: Optional[str] = Field(None, description="Town/city")
-    postal_code: Optional[str] = Field(None, description="Postal code")
-    country_code: Optional[str] = Field(None, description="Country code")
-    nuts_code: Optional[str] = Field(None, description="NUTS region code")
-    authority_type: Optional[AuthorityTypeEntry] = Field(
-        None, description="Authority type"
-    )
-    main_activity_code: Optional[str] = Field(None, description="Main activity code")
-    identifiers: List[IdentifierEntry] = Field(
-        default_factory=list, description="Organization identifiers"
+    buyer_main_activity_code: Optional[str] = Field(
+        None, description="Main activity code of the buyer"
     )
 
 
@@ -108,20 +110,6 @@ class ContractModel(BaseModel):
     eu_funded: bool = Field(False, description="EU funded (BT-60)")
 
 
-class ContractorModel(BaseModel):
-    """Contractor model."""
-
-    official_name: str = Field(..., description="Official name of contractor")
-    address: Optional[str] = Field(None, description="Address")
-    town: Optional[str] = Field(None, description="Town/city")
-    postal_code: Optional[str] = Field(None, description="Postal code")
-    country_code: Optional[str] = Field(None, description="Country code")
-    nuts_code: Optional[str] = Field(None, description="NUTS region code")
-    identifiers: List[IdentifierEntry] = Field(
-        default_factory=list, description="Organization identifiers"
-    )
-
-
 class AwardModel(BaseModel):
     """Award model."""
 
@@ -142,7 +130,7 @@ class AwardModel(BaseModel):
     contract_end_date: Optional[date] = Field(
         None, description="Performance period end"
     )
-    contractors: List[ContractorModel] = Field(
+    contractors: List[OrganizationModel] = Field(
         default_factory=list, description="List of contractors"
     )
 
@@ -151,9 +139,7 @@ class AwardDataModel(BaseModel):
     """Complete award data model - this is what all parsers should return."""
 
     document: DocumentModel = Field(..., description="Document metadata")
-    contracting_body: ContractingBodyModel = Field(
-        ..., description="Contracting body information"
-    )
+    buyer: OrganizationModel = Field(..., description="Buyer organization")
     contract: ContractModel = Field(..., description="Contract information")
     awards: List[AwardModel] = Field(..., description="List of awards")
 

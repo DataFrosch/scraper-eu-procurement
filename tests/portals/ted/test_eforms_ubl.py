@@ -4,7 +4,7 @@ Tests for eForms UBL ContractAwardNotice format parser (2025+).
 The eForms UBL format is the new EU standard for TED notices starting in 2025.
 These tests validate:
 1. Document parsing (parse_xml_file)
-2. Data extraction (document, contracting body, contract, awards, contractors)
+2. Data extraction (document, buyer, contract, awards, contractors)
 3. Data validation using Pydantic models
 """
 
@@ -15,10 +15,9 @@ from awards.portals.ted import eforms_ubl
 from awards.schema import (
     AwardDataModel,
     DocumentModel,
-    ContractingBodyModel,
+    OrganizationModel,
     ContractModel,
     AwardModel,
-    ContractorModel,
 )
 
 
@@ -63,15 +62,11 @@ class TestEFormsUBLParser:
             f"Version should be eForms-UBL in {fixture_name}"
         )
 
-        # Validate contracting body
-        contracting_body = award_data.contracting_body
-        assert isinstance(contracting_body, ContractingBodyModel)
-        assert contracting_body.official_name, (
-            f"Contracting body name should be present in {fixture_name}"
-        )
-        assert contracting_body.country_code, (
-            f"Country code should be present in {fixture_name}"
-        )
+        # Validate buyer
+        buyer = award_data.buyer
+        assert isinstance(buyer, OrganizationModel)
+        assert buyer.official_name, f"Buyer name should be present in {fixture_name}"
+        assert buyer.country_code, f"Country code should be present in {fixture_name}"
 
         # Validate contract
         contract = award_data.contract
@@ -88,7 +83,7 @@ class TestEFormsUBLParser:
         # Validate contractors if present
         if award.contractors:
             for contractor in award.contractors:
-                assert isinstance(contractor, ContractorModel)
+                assert isinstance(contractor, OrganizationModel)
                 assert contractor.official_name, (
                     f"Contractor name should be present in {fixture_name}"
                 )
@@ -206,13 +201,13 @@ class TestEFormsUBLParser:
         assert award.contract_end_date == date(2025, 4, 16)
 
     def test_parse_eforms_contracting_body_identifier(self):
-        """Test organization identifier extraction for contracting body."""
+        """Test organization identifier extraction for buyer."""
         fixture_file = FIXTURES_DIR / "eforms_ubl_2025.xml"
         result = eforms_ubl.parse_xml_file(fixture_file)
-        cb = result[0].contracting_body
-        assert len(cb.identifiers) == 1
-        assert cb.identifiers[0].scheme is None
-        assert cb.identifiers[0].identifier == "90004585"
+        buyer = result[0].buyer
+        assert len(buyer.identifiers) == 1
+        assert buyer.identifiers[0].scheme is None
+        assert buyer.identifiers[0].identifier == "90004585"
 
     def test_parse_eforms_contractor_identifier(self):
         """Test organization identifier extraction for contractor."""
@@ -227,8 +222,8 @@ class TestEFormsUBLParser:
         """Test that schemeName attribute is extracted as scheme."""
         fixture_file = FIXTURES_DIR / "eforms_ubl_2025_schemename.xml"
         result = eforms_ubl.parse_xml_file(fixture_file)
-        cb = result[0].contracting_body
-        assert cb.identifiers[0].scheme == "ID_PLATAFORMA"
+        buyer = result[0].buyer
+        assert buyer.identifiers[0].scheme == "ID_PLATAFORMA"
         contractor = result[0].awards[0].contractors[0]
         assert contractor.identifiers[0].scheme == "NIF"
 

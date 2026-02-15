@@ -11,10 +11,9 @@ from sqlalchemy import text as sa_text
 from .countries import get_country_name
 from .models import (
     Document,
-    ContractingBody,
+    Organization,
     Contract,
     Award,
-    Contractor,
     CpvCode,
     ProcedureType,
     AuthorityType,
@@ -78,18 +77,12 @@ _upsert_country = _country_ins.on_conflict_do_update(
     set_={"name": func.coalesce(_country_ins.excluded.name, Country.__table__.c.name)},
 )
 
-# Entity table upserts (RETURNING id)
-_cb_ins = pg_insert(ContractingBody.__table__)
-_upsert_cb = _cb_ins.on_conflict_do_update(
-    constraint="uq_contracting_body_identity",
-    set_={"official_name": _cb_ins.excluded.official_name},
-).returning(ContractingBody.__table__.c.id)
-
-_ct_ins = pg_insert(Contractor.__table__)
-_upsert_ct = _ct_ins.on_conflict_do_update(
-    constraint="uq_contractor_identity",
-    set_={"official_name": _ct_ins.excluded.official_name},
-).returning(Contractor.__table__.c.id)
+# Entity table upsert (RETURNING id) — single statement for all organizations
+_org_ins = pg_insert(Organization.__table__)
+_upsert_org = _org_ins.on_conflict_do_update(
+    constraint="uq_organization_identity",
+    set_={"official_name": _org_ins.excluded.official_name},
+).returning(Organization.__table__.c.id)
 
 # Plain inserts
 _insert_doc = Document.__table__.insert()
@@ -100,12 +93,8 @@ _insert_award_ct = award_contractors.insert()
 
 # Organization identifier upsert (ignore duplicates)
 _org_id_ins = pg_insert(OrganizationIdentifier.__table__)
-_upsert_org_id_cb = _org_id_ins.on_conflict_do_nothing(
-    constraint="uq_org_id_cb",
-)
-_org_id_ins_ct = pg_insert(OrganizationIdentifier.__table__)
-_upsert_org_id_ct = _org_id_ins_ct.on_conflict_do_nothing(
-    constraint="uq_org_id_ct",
+_upsert_org_id = _org_id_ins.on_conflict_do_nothing(
+    constraint="uq_org_identifier",
 )
 
 # Doc existence check
@@ -152,15 +141,15 @@ def save_document_core(session: Session, award_data: AwardDataModel) -> bool:
         logger.debug(f"Document {doc_id} already imported, skipping")
         return False
 
-    # Upsert authority type into lookup table before contracting body (FK dependency)
-    cb_dict = award_data.contracting_body.model_dump()
-    authority_type_data = cb_dict.pop("authority_type", None)
-    if authority_type_data:
+    # Upsert authority type into lookup table (FK dependency for document)
+    authority_type_data = None
+    if award_data.document.buyer_authority_type:
+        authority_type_data = award_data.document.buyer_authority_type.model_dump()
         session.execute(_upsert_at, authority_type_data)
-        cb_dict["authority_type_code"] = authority_type_data["code"]
 
     # Normalize country codes
-    cb_dict["country_code"] = _normalize_country_code(cb_dict.get("country_code"))
+    buyer_dict = award_data.buyer.model_dump()
+    buyer_dict["country_code"] = _normalize_country_code(buyer_dict.get("country_code"))
     doc_params = award_data.document.model_dump()
     doc_params["source_country"] = _normalize_country_code(
         doc_params.get("source_country")
@@ -181,7 +170,7 @@ def save_document_core(session: Session, award_data: AwardDataModel) -> bool:
     country_codes = {
         code
         for code in [
-            cb_dict["country_code"],
+            buyer_dict["country_code"],
             doc_params["source_country"],
             *(cd["country_code"] for cd in all_contractor_dicts),
         ]
@@ -193,27 +182,35 @@ def save_document_core(session: Session, award_data: AwardDataModel) -> bool:
             [{"code": c, "name": get_country_name(c)} for c in country_codes],
         )
 
-    # Upsert contracting body
-    cb_identifiers = cb_dict.pop("identifiers", [])
-    cb_id = session.execute(_upsert_cb, cb_dict).scalar_one()
+    # Upsert buyer organization
+    buyer_identifiers = buyer_dict.pop("identifiers", [])
+    buyer_org_id = session.execute(_upsert_org, buyer_dict).scalar_one()
 
-    # Insert contracting body identifiers
-    if cb_identifiers:
+    # Insert buyer organization identifiers
+    if buyer_identifiers:
         session.execute(
-            _upsert_org_id_cb,
+            _upsert_org_id,
             [
                 {
                     "scheme": ident["scheme"],
                     "identifier": ident["identifier"],
-                    "contracting_body_id": cb_id,
-                    "contractor_id": None,
+                    "organization_id": buyer_org_id,
                 }
-                for ident in cb_identifiers
+                for ident in buyer_identifiers
             ],
         )
 
-    # Create document with FK to contracting body
-    doc_params["contracting_body_id"] = cb_id
+    # Create document with FK to buyer organization
+    # Remove Pydantic-only fields not in DB columns
+    doc_params.pop("buyer_authority_type", None)
+    doc_params.pop("buyer_main_activity_code", None)
+    doc_params["buyer_organization_id"] = buyer_org_id
+    doc_params["buyer_authority_type_code"] = (
+        authority_type_data["code"] if authority_type_data else None
+    )
+    doc_params["buyer_main_activity_code"] = (
+        award_data.document.buyer_main_activity_code
+    )
     session.execute(_insert_doc, doc_params)
 
     # Upsert CPV codes into lookup table before creating contract (FK dependency)
@@ -261,24 +258,23 @@ def save_document_core(session: Session, award_data: AwardDataModel) -> bool:
         ]
         ct_offset += len(contractors_raw)
 
-        seen_contractor_ids = set()
+        seen_org_ids = set()
         for c, ct_idents in zip(contractors_data, ct_identifiers_data):
-            contractor_id = session.execute(_upsert_ct, c).scalar_one()
-            if contractor_id not in seen_contractor_ids:
-                seen_contractor_ids.add(contractor_id)
+            org_id = session.execute(_upsert_org, c).scalar_one()
+            if org_id not in seen_org_ids:
+                seen_org_ids.add(org_id)
                 all_award_ct_params.append(
-                    {"award_id": award_id, "contractor_id": contractor_id}
+                    {"award_id": award_id, "organization_id": org_id}
                 )
             # Insert contractor identifiers
             if ct_idents:
                 session.execute(
-                    _upsert_org_id_ct,
+                    _upsert_org_id,
                     [
                         {
                             "scheme": ident["scheme"],
                             "identifier": ident["identifier"],
-                            "contracting_body_id": None,
-                            "contractor_id": contractor_id,
+                            "organization_id": org_id,
                         }
                         for ident in ct_idents
                     ],
@@ -304,8 +300,8 @@ CREATE MATERIALIZED VIEW IF NOT EXISTS awards_adjusted AS
 SELECT
     a.id AS award_id, a.contract_id, c.doc_id,
     d.publication_date, d.source_country,
-    cb.official_name AS contracting_body_name,
-    cb.country_code AS contracting_body_country,
+    o.official_name AS buyer_name,
+    o.country_code AS buyer_country,
     c.title AS contract_title, c.main_cpv_code,
     c.contract_nature_code, c.procedure_type_code,
     c.nuts_code AS contract_nuts_code,
@@ -329,7 +325,7 @@ SELECT
 FROM awards a
 JOIN contracts c ON a.contract_id = c.id
 JOIN documents d ON c.doc_id = d.doc_id
-JOIN contracting_bodies cb ON d.contracting_body_id = cb.id
+JOIN organizations o ON d.buyer_organization_id = o.id
 LEFT JOIN exchange_rates er
     ON er.currency = a.awarded_value_currency
     AND er.year = EXTRACT(YEAR FROM d.publication_date)::int

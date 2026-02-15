@@ -19,14 +19,13 @@ from lxml import etree
 from ...schema import (
     AwardDataModel,
     DocumentModel,
-    ContractingBodyModel,
+    OrganizationModel,
     ContractModel,
     CpvCodeEntry,
     IdentifierEntry,
     ProcedureTypeEntry,
     AuthorityTypeEntry,
     AwardModel,
-    ContractorModel,
 )
 from ...parsers.monetary import parse_monetary_value
 from ...parsers.xml import (
@@ -315,12 +314,12 @@ def parse_xml_file(xml_file: Path) -> Optional[List[AwardDataModel]]:
         if not document:
             return None
 
-        contracting_body, contact_fields = _extract_contracting_body(root, variant)
-        if not contracting_body:
+        buyer, contact_fields = _extract_buyer(root, variant)
+        if not buyer:
             logger.debug(f"No contracting body found in {xml_file.name}")
             return None
 
-        # Add contact fields to document
+        # Add contact fields (including buyer authority/activity) to document
         document = document.model_copy(update=contact_fields)
 
         contract = _extract_contract_info(root, variant)
@@ -336,7 +335,7 @@ def parse_xml_file(xml_file: Path) -> Optional[List[AwardDataModel]]:
         return [
             AwardDataModel(
                 document=document,
-                contracting_body=contracting_body,
+                buyer=buyer,
                 contract=contract,
                 awards=awards,
             )
@@ -467,26 +466,26 @@ def _make_authority_type_entry(
     return None
 
 
-def _extract_contracting_body(
+def _extract_buyer(
     root: etree._Element, variant: str
-) -> tuple[Optional[ContractingBodyModel], dict]:
-    """Extract contracting body information based on variant.
+) -> tuple[Optional[OrganizationModel], dict]:
+    """Extract buyer organization based on variant.
 
-    Returns a tuple of (contracting_body, contact_fields_dict).
-    Contact fields belong on the document, not the contracting body.
+    Returns a tuple of (organization, contact_fields_dict).
+    Contact fields (including authority_type and main_activity) belong on the document.
     """
     if variant == "R2.0.9":
-        return _extract_contracting_body_r209(root)
+        return _extract_buyer_r209(root)
     else:
-        return _extract_contracting_body_r207(root)
+        return _extract_buyer_r207(root)
 
 
-def _extract_contracting_body_r207(
+def _extract_buyer_r207(
     root: etree._Element,
-) -> tuple[Optional[ContractingBodyModel], dict]:
-    """Extract contracting body for R2.0.7/R2.0.8 formats.
+) -> tuple[Optional[OrganizationModel], dict]:
+    """Extract buyer organization for R2.0.7/R2.0.8 formats.
 
-    Returns (contracting_body, contact_fields_dict).
+    Returns (organization, contact_fields_dict).
     """
     ca_elem = root.find(
         ".//{http://publications.europa.eu/TED_schema/Export}CA_CE_CONCESSIONAIRE_PROFILE"
@@ -545,7 +544,11 @@ def _extract_contracting_body_r207(
         "phone": elem_text(phone_elem),
         "email": elem_text(email_elem),
         "url_general": elem_text(url_general_elem),
-        "url_buyer": elem_text(url_buyer_elem),
+        "buyer_url": elem_text(url_buyer_elem),
+        "buyer_authority_type": _make_authority_type_entry(
+            elem_attr(authority_type_elem, "CODE")
+        ),
+        "buyer_main_activity_code": elem_attr(activity_elem, "CODE"),
     }
 
     # Extract NATIONALID from ORGANISATION element
@@ -558,29 +561,25 @@ def _extract_contracting_body_r207(
             IdentifierEntry(scheme=None, identifier=nationalid_text.strip())
         )
 
-    cb = ContractingBodyModel(
+    org = OrganizationModel(
         official_name=official_name,
         address=elem_text(address_elem),
         town=elem_text(town_elem),
         postal_code=elem_text(postal_code_elem),
         country_code=elem_attr(country_elem, "VALUE"),
         nuts_code=None,
-        authority_type=_make_authority_type_entry(
-            elem_attr(authority_type_elem, "CODE")
-        ),
-        main_activity_code=elem_attr(activity_elem, "CODE"),
         identifiers=identifiers,
     )
 
-    return cb, contact_fields
+    return org, contact_fields
 
 
-def _extract_contracting_body_r209(
+def _extract_buyer_r209(
     root: etree._Element,
-) -> tuple[Optional[ContractingBodyModel], dict]:
-    """Extract contracting body for R2.0.9 format.
+) -> tuple[Optional[OrganizationModel], dict]:
+    """Extract buyer organization for R2.0.9 format.
 
-    Returns (contracting_body, contact_fields_dict).
+    Returns (organization, contact_fields_dict).
     """
     ns = _default_ns(root)
     ca_elem = root.find(f".//{ns}F03_2014//{ns}CONTRACTING_BODY")
@@ -599,7 +598,13 @@ def _extract_contracting_body_r209(
         "phone": elem_text(ca_elem.find(f".//{ns}PHONE")),
         "email": elem_text(ca_elem.find(f".//{ns}E_MAIL")),
         "url_general": elem_text(ca_elem.find(f".//{ns}URL_GENERAL")),
-        "url_buyer": elem_text(ca_elem.find(f".//{ns}URL_BUYER")),
+        "buyer_url": elem_text(ca_elem.find(f".//{ns}URL_BUYER")),
+        "buyer_authority_type": _make_authority_type_entry(
+            elem_attr(ca_elem.find(f".//{ns}CA_TYPE"), "VALUE")
+        ),
+        "buyer_main_activity_code": elem_attr(
+            ca_elem.find(f".//{ns}CA_ACTIVITY"), "VALUE"
+        ),
     }
 
     # Extract NATIONALID from ADDRESS_CONTRACTING_BODY
@@ -611,21 +616,17 @@ def _extract_contracting_body_r209(
                 IdentifierEntry(scheme=None, identifier=nationalid_text.strip())
             )
 
-    cb = ContractingBodyModel(
+    org = OrganizationModel(
         official_name=elem_text(ca_elem.find(f".//{ns}OFFICIALNAME")) or "",
         address=elem_text(ca_elem.find(f".//{ns}ADDRESS")),
         town=elem_text(ca_elem.find(f".//{ns}TOWN")),
         postal_code=elem_text(ca_elem.find(f".//{ns}POSTAL_CODE")),
         country_code=elem_attr(ca_elem.find(f".//{ns}COUNTRY"), "VALUE"),
         nuts_code=nuts_code,
-        authority_type=_make_authority_type_entry(
-            elem_attr(ca_elem.find(f".//{ns}CA_TYPE"), "VALUE")
-        ),
-        main_activity_code=elem_attr(ca_elem.find(f".//{ns}CA_ACTIVITY"), "VALUE"),
         identifiers=identifiers,
     )
 
-    return cb, contact_fields
+    return org, contact_fields
 
 
 def _extract_contract_info(
@@ -950,7 +951,7 @@ def _extract_awards_r209(root: etree._Element) -> List[AwardModel]:
     return awards
 
 
-def _extract_contractors_r207(award_elem: etree._Element) -> List[ContractorModel]:
+def _extract_contractors_r207(award_elem: etree._Element) -> List[OrganizationModel]:
     """Extract contractor information for R2.0.7/R2.0.8."""
     contractors = []
 
@@ -1005,7 +1006,7 @@ def _extract_contractors_r207(award_elem: etree._Element) -> List[ContractorMode
             )
 
         contractors.append(
-            ContractorModel(
+            OrganizationModel(
                 official_name=official_name,
                 address=elem_text(address_elem),
                 town=elem_text(town_elem),
@@ -1019,7 +1020,7 @@ def _extract_contractors_r207(award_elem: etree._Element) -> List[ContractorMode
     return contractors
 
 
-def _extract_contractors_r209(award_elem: etree._Element) -> List[ContractorModel]:
+def _extract_contractors_r209(award_elem: etree._Element) -> List[OrganizationModel]:
     """Extract contractor information for R2.0.9."""
     ns = _default_ns(award_elem)
     contractors = []
@@ -1036,7 +1037,7 @@ def _extract_contractors_r209(award_elem: etree._Element) -> List[ContractorMode
             )
 
         contractors.append(
-            ContractorModel(
+            OrganizationModel(
                 official_name=elem_text(contractor_elem.find(f".//{ns}OFFICIALNAME"))
                 or "",
                 address=elem_text(contractor_elem.find(f".//{ns}ADDRESS")),

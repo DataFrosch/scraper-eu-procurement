@@ -17,11 +17,10 @@ from lxml import etree
 from ...schema import (
     AwardDataModel,
     DocumentModel,
-    ContractingBodyModel,
+    OrganizationModel,
     ContractModel,
     CpvCodeEntry,
     AwardModel,
-    ContractorModel,
     IdentifierEntry,
 )
 from .ted_v2 import _normalize_contract_nature_code, _normalize_procedure_type
@@ -103,8 +102,8 @@ def parse_xml_file(xml_file: Path) -> Optional[List[AwardDataModel]]:
         if not document:
             return None
 
-        contracting_body, contact_fields = _extract_contracting_body(root)
-        if not contracting_body:
+        buyer, contact_fields = _extract_buyer(root)
+        if not buyer:
             logger.debug(f"No contracting body found in {xml_file.name}")
             return None
 
@@ -124,7 +123,7 @@ def parse_xml_file(xml_file: Path) -> Optional[List[AwardDataModel]]:
         return [
             AwardDataModel(
                 document=document,
-                contracting_body=contracting_body,
+                buyer=buyer,
                 contract=contract,
                 awards=awards,
             )
@@ -183,13 +182,13 @@ def _extract_document_info(
     )
 
 
-def _extract_contracting_body(
+def _extract_buyer(
     root: etree._Element,
-) -> tuple[Optional[ContractingBodyModel], dict]:
-    """Extract contracting body information from eForms UBL.
+) -> tuple[Optional[OrganizationModel], dict]:
+    """Extract buyer organization from eForms UBL.
 
-    Returns (contracting_body, contact_fields_dict).
-    Contact fields belong on the document, not the contracting body.
+    Returns (organization, contact_fields_dict).
+    Contact fields belong on the document, not the organization.
     """
     # Find the contracting party organization ID
     contracting_party_id_elem = root.xpath(
@@ -280,19 +279,17 @@ def _extract_contracting_body(
             )
         identifiers.append(IdentifierEntry(scheme=scheme, identifier=company_id))
 
-    cb = ContractingBodyModel(
+    org = OrganizationModel(
         official_name=first_text(name_elem) or "",
         address=first_text(address_elem),
         town=first_text(town_elem),
         postal_code=first_text(postal_elem),
         country_code=first_text(country_elem),
         nuts_code=first_text(nuts_elem),
-        authority_type=None,
-        main_activity_code=None,
         identifiers=identifiers,
     )
 
-    return cb, contact_fields
+    return org, contact_fields
 
 
 def _extract_contract_info(root: etree._Element) -> Optional[ContractModel]:
@@ -590,8 +587,8 @@ def _extract_awards(root: etree._Element) -> List[AwardModel]:
 
 def _company_to_contractor(
     company_elem: etree._Element,
-) -> Optional[ContractorModel]:
-    """Convert an eForms Company element to a ContractorModel."""
+) -> Optional[OrganizationModel]:
+    """Convert an eForms Company element to an OrganizationModel."""
     name_elem = company_elem.xpath(".//cac:PartyName/cbc:Name", namespaces=NAMESPACES)
     official_name = first_text(name_elem)
     if not official_name:
@@ -632,7 +629,7 @@ def _company_to_contractor(
             )
         identifiers.append(IdentifierEntry(scheme=scheme, identifier=company_id))
 
-    return ContractorModel(
+    return OrganizationModel(
         official_name=official_name,
         address=first_text(address_elem),
         town=first_text(town_elem),

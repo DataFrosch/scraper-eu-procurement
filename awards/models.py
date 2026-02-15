@@ -1,7 +1,7 @@
 """
 SQLAlchemy models for the awards database.
-Contractors and contracting bodies are normalized into shared lookup tables
-with exact-match deduplication via composite unique constraints.
+Organizations (buyers and contractors) are normalized into a shared lookup table
+with exact-match deduplication via a composite unique constraint.
 """
 
 from datetime import date
@@ -10,7 +10,6 @@ from typing import List, Optional
 
 from sqlalchemy import (
     Boolean,
-    CheckConstraint,
     Column,
     DDL,
     Date,
@@ -63,12 +62,12 @@ award_contractors = Table(
         primary_key=True,
     ),
     Column(
-        "contractor_id",
+        "organization_id",
         Integer,
-        ForeignKey("contractors.id"),
+        ForeignKey("organizations.id"),
         primary_key=True,
     ),
-    Index("idx_award_contractors_contractor", "contractor_id"),
+    Index("idx_award_contractors_org", "organization_id"),
 )
 
 
@@ -128,10 +127,13 @@ contract_cpv_codes = Table(
 )
 
 
-class ContractingBody(Base):
-    """Shared contracting body lookup table (exact-match deduplication)."""
+class Organization(Base):
+    """Shared organization lookup table (exact-match deduplication).
 
-    __tablename__ = "contracting_bodies"
+    Used for both buyers (contracting bodies) and contractors.
+    """
+
+    __tablename__ = "organizations"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     official_name: Mapped[str] = mapped_column(Text, nullable=False)
@@ -142,13 +144,12 @@ class ContractingBody(Base):
         String, ForeignKey("countries.code"), nullable=True
     )
     nuts_code: Mapped[Optional[str]] = mapped_column(String, nullable=True)
-    authority_type_code: Mapped[Optional[str]] = mapped_column(
-        String, ForeignKey("authority_types.code"), nullable=True
-    )
-    main_activity_code: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     # Relationships
     documents: Mapped[List["Document"]] = relationship(
-        "Document", back_populates="contracting_body"
+        "Document", back_populates="buyer_organization"
+    )
+    awards: Mapped[List["Award"]] = relationship(
+        "Award", secondary=award_contractors, back_populates="contractors"
     )
 
     __table_args__ = (
@@ -159,15 +160,13 @@ class ContractingBody(Base):
             "postal_code",
             "country_code",
             "nuts_code",
-            "authority_type_code",
-            "main_activity_code",
-            name="uq_contracting_body_identity",
+            name="uq_organization_identity",
             postgresql_nulls_not_distinct=True,
         ),
-        Index("idx_contracting_body_country", "country_code"),
-        Index("idx_contracting_body_nuts", "nuts_code"),
+        Index("idx_organization_country", "country_code"),
+        Index("idx_organization_nuts", "nuts_code"),
         Index(
-            "idx_contracting_body_name_trgm",
+            "idx_organization_name_trgm",
             "official_name",
             postgresql_using="gin",
             postgresql_ops={"official_name": "gin_trgm_ops"},
@@ -194,13 +193,19 @@ class Document(Base):
     phone: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     email: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     url_general: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    url_buyer: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    contracting_body_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("contracting_bodies.id"), nullable=False
+    buyer_url: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    buyer_organization_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("organizations.id"), nullable=False
+    )
+    buyer_authority_type_code: Mapped[Optional[str]] = mapped_column(
+        String, ForeignKey("authority_types.code"), nullable=True
+    )
+    buyer_main_activity_code: Mapped[Optional[str]] = mapped_column(
+        String, nullable=True
     )
     # Relationships
-    contracting_body: Mapped["ContractingBody"] = relationship(
-        "ContractingBody", back_populates="documents"
+    buyer_organization: Mapped["Organization"] = relationship(
+        "Organization", back_populates="documents"
     )
     contracts: Mapped[List["Contract"]] = relationship(
         "Contract", back_populates="document", cascade="all, delete-orphan"
@@ -213,7 +218,7 @@ class Document(Base):
             text("extract(year from publication_date)"),
         ),
         Index("idx_documents_country", "source_country"),
-        Index("idx_documents_cb", "contracting_body_id"),
+        Index("idx_documents_buyer_org", "buyer_organization_id"),
     )
 
 
@@ -290,8 +295,8 @@ class Award(Base):
     contract_end_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
     # Relationships
     contract: Mapped["Contract"] = relationship("Contract", back_populates="awards")
-    contractors: Mapped[List["Contractor"]] = relationship(
-        "Contractor", secondary=award_contractors, back_populates="awards"
+    contractors: Mapped[List["Organization"]] = relationship(
+        "Organization", secondary=award_contractors, back_populates="awards"
     )
 
     __table_args__ = (
@@ -326,82 +331,26 @@ class PriceIndex(Base):
     index_value: Mapped[Decimal] = mapped_column(Numeric(12, 4), nullable=False)
 
 
-class Contractor(Base):
-    """Shared contractor lookup table (exact-match deduplication)."""
-
-    __tablename__ = "contractors"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    official_name: Mapped[str] = mapped_column(Text, nullable=False)
-    address: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    town: Mapped[Optional[str]] = mapped_column(String, nullable=True)
-    postal_code: Mapped[Optional[str]] = mapped_column(String, nullable=True)
-    country_code: Mapped[Optional[str]] = mapped_column(
-        String, ForeignKey("countries.code"), nullable=True
-    )
-    nuts_code: Mapped[Optional[str]] = mapped_column(String, nullable=True)
-    # Relationships
-    awards: Mapped[List["Award"]] = relationship(
-        "Award", secondary=award_contractors, back_populates="contractors"
-    )
-
-    __table_args__ = (
-        UniqueConstraint(
-            "official_name",
-            "address",
-            "town",
-            "postal_code",
-            "country_code",
-            "nuts_code",
-            name="uq_contractor_identity",
-            postgresql_nulls_not_distinct=True,
-        ),
-        Index("idx_contractors_country", "country_code"),
-        Index("idx_contractors_nuts", "nuts_code"),
-        Index(
-            "idx_contractors_name_trgm",
-            "official_name",
-            postgresql_using="gin",
-            postgresql_ops={"official_name": "gin_trgm_ops"},
-        ),
-    )
-
-
 class OrganizationIdentifier(Base):
-    """Organization identifiers (SIRET, VAT, KVK, etc.) for contracting bodies and contractors."""
+    """Organization identifiers (SIRET, VAT, KVK, etc.)."""
 
     __tablename__ = "organization_identifiers"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     scheme: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     identifier: Mapped[str] = mapped_column(String, nullable=False)
-    contracting_body_id: Mapped[Optional[int]] = mapped_column(
-        Integer, ForeignKey("contracting_bodies.id", ondelete="CASCADE"), nullable=True
-    )
-    contractor_id: Mapped[Optional[int]] = mapped_column(
-        Integer, ForeignKey("contractors.id", ondelete="CASCADE"), nullable=True
+    organization_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False
     )
 
     __table_args__ = (
-        CheckConstraint(
-            "(contracting_body_id IS NOT NULL) != (contractor_id IS NOT NULL)",
-            name="ck_org_id_one_entity",
-        ),
         UniqueConstraint(
             "scheme",
             "identifier",
-            "contracting_body_id",
-            name="uq_org_id_cb",
+            "organization_id",
+            name="uq_org_identifier",
             postgresql_nulls_not_distinct=True,
         ),
-        UniqueConstraint(
-            "scheme",
-            "identifier",
-            "contractor_id",
-            name="uq_org_id_ct",
-            postgresql_nulls_not_distinct=True,
-        ),
-        Index("idx_org_id_cb", "contracting_body_id"),
-        Index("idx_org_id_ct", "contractor_id"),
+        Index("idx_org_id_org", "organization_id"),
         Index("idx_org_id_scheme_id", "scheme", "identifier"),
     )
