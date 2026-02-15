@@ -44,9 +44,11 @@ from ...parsers.xml import (
 _AUTHORITY_TYPE_CODE_MAP: dict[str, str | None] = {
     "1": "cga",
     "3": "ra",
+    "4": None,  # "Utilities entity" — maps to buyer-contracting-type, not buyer-legal-type
     "5": "eu-ins-bod-ag",
     "6": "body-pl",
     "8": None,
+    "9": None,  # "Not applicable"
     "N": "cga",
     "R": "body-pl-ra",
     "Z": None,
