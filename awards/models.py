@@ -9,6 +9,8 @@ from decimal import Decimal
 from typing import List, Optional
 
 from sqlalchemy import (
+    Boolean,
+    CheckConstraint,
     Column,
     DDL,
     Date,
@@ -237,6 +239,18 @@ class Contract(Base):
     accelerated: Mapped[bool] = mapped_column(
         default=False, server_default="false", nullable=False
     )
+    estimated_value: Mapped[Optional[Decimal]] = mapped_column(
+        Numeric(24, 2), nullable=True
+    )
+    estimated_value_currency: Mapped[Optional[str]] = mapped_column(
+        String, nullable=True
+    )
+    framework_agreement: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false", nullable=False
+    )
+    eu_funded: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false", nullable=False
+    )
     # Relationships
     document: Mapped["Document"] = relationship("Document", back_populates="contracts")
     awards: Mapped[List["Award"]] = relationship(
@@ -270,6 +284,10 @@ class Award(Base):
         Numeric(24, 2), nullable=True
     )
     awarded_value_currency: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    award_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    lot_number: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    contract_start_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    contract_end_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
     # Relationships
     contract: Mapped["Contract"] = relationship("Contract", back_populates="awards")
     contractors: Mapped[List["Contractor"]] = relationship(
@@ -346,4 +364,44 @@ class Contractor(Base):
             postgresql_using="gin",
             postgresql_ops={"official_name": "gin_trgm_ops"},
         ),
+    )
+
+
+class OrganizationIdentifier(Base):
+    """Organization identifiers (SIRET, VAT, KVK, etc.) for contracting bodies and contractors."""
+
+    __tablename__ = "organization_identifiers"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    scheme: Mapped[str] = mapped_column(String, nullable=False)
+    identifier: Mapped[str] = mapped_column(String, nullable=False)
+    contracting_body_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("contracting_bodies.id", ondelete="CASCADE"), nullable=True
+    )
+    contractor_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("contractors.id", ondelete="CASCADE"), nullable=True
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "(contracting_body_id IS NOT NULL) != (contractor_id IS NOT NULL)",
+            name="ck_org_id_one_entity",
+        ),
+        UniqueConstraint(
+            "scheme",
+            "identifier",
+            "contracting_body_id",
+            name="uq_org_id_cb",
+            postgresql_nulls_not_distinct=True,
+        ),
+        UniqueConstraint(
+            "scheme",
+            "identifier",
+            "contractor_id",
+            name="uq_org_id_ct",
+            postgresql_nulls_not_distinct=True,
+        ),
+        Index("idx_org_id_cb", "contracting_body_id"),
+        Index("idx_org_id_ct", "contractor_id"),
+        Index("idx_org_id_scheme_id", "scheme", "identifier"),
     )

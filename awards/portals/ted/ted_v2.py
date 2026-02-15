@@ -691,6 +691,10 @@ def _extract_contract_info_r207(root: etree._Element) -> Optional[ContractModel]
         procedure_code, procedure_description or None
     )
 
+    # EU funded: check if RELATES_TO_EU_PROJECT_YES is present
+    ns_r207 = "{http://publications.europa.eu/TED_schema/Export}"
+    eu_funded = root.find(f".//{ns_r207}RELATES_TO_EU_PROJECT_YES") is not None
+
     return ContractModel(
         title=element_text(title_elem) or "",
         short_description=element_text(description_elem),
@@ -702,6 +706,7 @@ def _extract_contract_info_r207(root: etree._Element) -> Optional[ContractModel]
         ),
         procedure_type=procedure_type,
         accelerated=accelerated,
+        eu_funded=eu_funded,
     )
 
 
@@ -747,6 +752,28 @@ def _extract_contract_info_r209(root: etree._Element) -> Optional[ContractModel]
         procedure_code, procedure_description or None
     )
 
+    # Framework agreement
+    framework_elem = object_elem.find(f".//{ns}OBJECT_DESCR//{ns}FRAMEWORK")
+    framework_agreement = framework_elem is not None
+
+    # EU funded
+    eu_funded = False
+    eu_progr_elem = object_elem.find(f".//{ns}OBJECT_DESCR//{ns}EU_PROGR_RELATED")
+    if eu_progr_elem is not None:
+        eu_funded = True
+
+    # Estimated value from VAL_ESTIMATED_TOTAL
+    estimated_value = None
+    estimated_value_currency = None
+    est_val_elem = object_elem.find(f".//{ns}VAL_ESTIMATED_TOTAL")
+    if est_val_elem is not None:
+        estimated_value = _extract_value_amount(est_val_elem)
+        estimated_value_currency = est_val_elem.get("CURRENCY")
+        if estimated_value is not None:
+            from decimal import Decimal
+
+            estimated_value = Decimal(str(estimated_value))
+
     return ContractModel(
         title=element_text(title_elem) or "",
         short_description=element_text(description_elem),
@@ -758,6 +785,10 @@ def _extract_contract_info_r209(root: etree._Element) -> Optional[ContractModel]
         ),
         procedure_type=procedure_type,
         accelerated=accelerated,
+        framework_agreement=framework_agreement,
+        eu_funded=eu_funded,
+        estimated_value=estimated_value,
+        estimated_value_currency=estimated_value_currency,
     )
 
 
@@ -806,6 +837,22 @@ def _extract_awards_r207(root: etree._Element) -> List[AwardModel]:
 
         offers_elem = award_elem.find(f".//{ns}OFFERS_RECEIVED_NUMBER")
 
+        # Lot number from ITEM attribute
+        lot_number = award_elem.get("ITEM")
+
+        # Award date from CONTRACT_AWARD_DATE (nested DAY/MONTH/YEAR)
+        award_date = None
+        award_date_elem = award_elem.find(f".//{ns}CONTRACT_AWARD_DATE")
+        if award_date_elem is not None:
+            day = elem_text(award_date_elem.find(f".//{ns}DAY"))
+            month = elem_text(award_date_elem.find(f".//{ns}MONTH"))
+            year = elem_text(award_date_elem.find(f".//{ns}YEAR"))
+            if day and month and year:
+                try:
+                    award_date = date(int(year), int(month), int(day))
+                except (ValueError, TypeError):
+                    pass
+
         contractors = _extract_contractors_r207(award_elem)
 
         awards.append(
@@ -818,6 +865,8 @@ def _extract_awards_r207(root: etree._Element) -> List[AwardModel]:
                     elem_text(offers_elem),
                     "tenders_received",
                 ),
+                lot_number=lot_number,
+                award_date=award_date,
                 contractors=contractors,
             )
         )
@@ -838,6 +887,18 @@ def _extract_awards_r209(root: etree._Element) -> List[AwardModel]:
         value_elem = award_decision_elem.find(f".//{ns}VAL_TOTAL")
         offers_elem = award_decision_elem.find(f".//{ns}NB_TENDERS_RECEIVED")
 
+        # Lot number from ITEM attribute
+        lot_number = award_elem.get("ITEM")
+
+        # Award date from DATE_CONCLUSION_CONTRACT (YYYY-MM-DD)
+        award_date = None
+        date_elem = award_decision_elem.find(f".//{ns}DATE_CONCLUSION_CONTRACT")
+        if date_elem is not None and date_elem.text:
+            try:
+                award_date = date.fromisoformat(date_elem.text.strip())
+            except ValueError:
+                pass
+
         contractors = _extract_contractors_r209(award_decision_elem)
 
         awards.append(
@@ -852,6 +913,8 @@ def _extract_awards_r209(root: etree._Element) -> List[AwardModel]:
                     offers_elem.text if offers_elem is not None else None,
                     "tenders_received",
                 ),
+                lot_number=lot_number,
+                award_date=award_date,
                 contractors=contractors,
             )
         )

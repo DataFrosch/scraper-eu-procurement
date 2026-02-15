@@ -24,6 +24,7 @@ from awards.models import (
     Contractor,
     CpvCode,
     Country,
+    OrganizationIdentifier,
     ProcedureType,
     award_contractors,
     contract_cpv_codes,
@@ -34,6 +35,7 @@ from awards.schema import (
     ContractingBodyModel,
     ContractModel,
     CpvCodeEntry,
+    IdentifierEntry,
     ProcedureTypeEntry,
     AwardModel,
     ContractorModel,
@@ -936,5 +938,236 @@ class TestCountryLookupTable:
             countries = {row[0].code for row in session.execute(select(Country)).all()}
             assert "DE" in countries
             assert "PL" in countries
+        finally:
+            session.close()
+
+
+class TestNewFields:
+    """Tests for new Award and Contract fields."""
+
+    def test_award_new_fields_stored(self, test_db):
+        """Test that award_date, lot_number, contract dates are stored."""
+        from awards.db import SessionLocal
+
+        award_data = AwardDataModel(
+            document=DocumentModel(
+                doc_id="12345-2024",
+                publication_date=date(2024, 1, 1),
+                source_country="DE",
+            ),
+            contracting_body=ContractingBodyModel(
+                official_name="Body 1", country_code="DE"
+            ),
+            contract=ContractModel(title="Contract 1"),
+            awards=[
+                AwardModel(
+                    award_title="Lot 1",
+                    lot_number="LOT-0001",
+                    award_date=date(2024, 6, 15),
+                    contract_start_date=date(2024, 7, 1),
+                    contract_end_date=date(2025, 6, 30),
+                    contractors=[],
+                )
+            ],
+        )
+
+        save_document(award_data)
+
+        session = SessionLocal()
+        try:
+            award = session.execute(select(Award)).scalar_one()
+            assert award.lot_number == "LOT-0001"
+            assert award.award_date == date(2024, 6, 15)
+            assert award.contract_start_date == date(2024, 7, 1)
+            assert award.contract_end_date == date(2025, 6, 30)
+        finally:
+            session.close()
+
+    def test_contract_new_fields_stored(self, test_db):
+        """Test that estimated_value, framework_agreement, eu_funded are stored."""
+        from awards.db import SessionLocal
+
+        award_data = AwardDataModel(
+            document=DocumentModel(
+                doc_id="12345-2024",
+                publication_date=date(2024, 1, 1),
+                source_country="DE",
+            ),
+            contracting_body=ContractingBodyModel(
+                official_name="Body 1", country_code="DE"
+            ),
+            contract=ContractModel(
+                title="Contract 1",
+                estimated_value=Decimal("500000.00"),
+                estimated_value_currency="EUR",
+                framework_agreement=True,
+                eu_funded=True,
+            ),
+            awards=[AwardModel(contractors=[])],
+        )
+
+        save_document(award_data)
+
+        session = SessionLocal()
+        try:
+            contract = session.execute(select(Contract)).scalar_one()
+            assert contract.estimated_value == Decimal("500000.00")
+            assert contract.estimated_value_currency == "EUR"
+            assert contract.framework_agreement is True
+            assert contract.eu_funded is True
+        finally:
+            session.close()
+
+    def test_contract_boolean_defaults(self, test_db):
+        """Test that framework_agreement and eu_funded default to False."""
+        from awards.db import SessionLocal
+
+        award_data = AwardDataModel(
+            document=DocumentModel(
+                doc_id="12345-2024",
+                publication_date=date(2024, 1, 1),
+                source_country="DE",
+            ),
+            contracting_body=ContractingBodyModel(
+                official_name="Body 1", country_code="DE"
+            ),
+            contract=ContractModel(title="Contract 1"),
+            awards=[AwardModel(contractors=[])],
+        )
+
+        save_document(award_data)
+
+        session = SessionLocal()
+        try:
+            contract = session.execute(select(Contract)).scalar_one()
+            assert contract.framework_agreement is False
+            assert contract.eu_funded is False
+        finally:
+            session.close()
+
+
+class TestOrganizationIdentifiers:
+    """Tests for organization identifier storage."""
+
+    def test_contracting_body_identifiers_stored(self, test_db):
+        """Test that contracting body identifiers are stored."""
+        from awards.db import SessionLocal
+
+        award_data = AwardDataModel(
+            document=DocumentModel(
+                doc_id="12345-2024",
+                publication_date=date(2024, 1, 1),
+                source_country="DE",
+            ),
+            contracting_body=ContractingBodyModel(
+                official_name="Body 1",
+                country_code="DE",
+                identifiers=[
+                    IdentifierEntry(scheme="ORG", identifier="90004585"),
+                ],
+            ),
+            contract=ContractModel(title="Contract 1"),
+            awards=[AwardModel(contractors=[])],
+        )
+
+        save_document(award_data)
+
+        session = SessionLocal()
+        try:
+            org_ids = session.execute(select(OrganizationIdentifier)).all()
+            assert len(org_ids) == 1
+            org_id = org_ids[0][0]
+            assert org_id.scheme == "ORG"
+            assert org_id.identifier == "90004585"
+            assert org_id.contracting_body_id is not None
+            assert org_id.contractor_id is None
+        finally:
+            session.close()
+
+    def test_contractor_identifiers_stored(self, test_db):
+        """Test that contractor identifiers are stored."""
+        from awards.db import SessionLocal
+
+        award_data = AwardDataModel(
+            document=DocumentModel(
+                doc_id="12345-2024",
+                publication_date=date(2024, 1, 1),
+                source_country="DE",
+            ),
+            contracting_body=ContractingBodyModel(
+                official_name="Body 1", country_code="DE"
+            ),
+            contract=ContractModel(title="Contract 1"),
+            awards=[
+                AwardModel(
+                    contractors=[
+                        ContractorModel(
+                            official_name="Contractor A",
+                            country_code="DE",
+                            identifiers=[
+                                IdentifierEntry(scheme="ORG", identifier="12339040"),
+                            ],
+                        )
+                    ]
+                )
+            ],
+        )
+
+        save_document(award_data)
+
+        session = SessionLocal()
+        try:
+            org_ids = session.execute(select(OrganizationIdentifier)).all()
+            assert len(org_ids) == 1
+            org_id = org_ids[0][0]
+            assert org_id.scheme == "ORG"
+            assert org_id.identifier == "12339040"
+            assert org_id.contractor_id is not None
+            assert org_id.contracting_body_id is None
+        finally:
+            session.close()
+
+    def test_identifier_deduplication(self, test_db):
+        """Test that duplicate identifiers are not inserted twice."""
+        from awards.db import SessionLocal
+
+        cb = ContractingBodyModel(
+            official_name="Body 1",
+            country_code="DE",
+            identifiers=[
+                IdentifierEntry(scheme="ORG", identifier="90004585"),
+            ],
+        )
+
+        award_data_1 = AwardDataModel(
+            document=DocumentModel(
+                doc_id="12345-2024",
+                publication_date=date(2024, 1, 1),
+                source_country="DE",
+            ),
+            contracting_body=cb,
+            contract=ContractModel(title="Contract 1"),
+            awards=[AwardModel(contractors=[])],
+        )
+
+        award_data_2 = AwardDataModel(
+            document=DocumentModel(
+                doc_id="67890-2024",
+                publication_date=date(2024, 1, 2),
+                source_country="DE",
+            ),
+            contracting_body=cb,
+            contract=ContractModel(title="Contract 2"),
+            awards=[AwardModel(contractors=[])],
+        )
+
+        save_document(award_data_1)
+        save_document(award_data_2)
+
+        session = SessionLocal()
+        try:
+            # Same CB with same identifier -> only one org identifier row
+            org_ids = session.execute(select(OrganizationIdentifier)).all()
+            assert len(org_ids) == 1
         finally:
             session.close()

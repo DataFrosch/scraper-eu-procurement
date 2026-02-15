@@ -378,6 +378,58 @@ class TestTedV2R209Parser:
         assert isinstance(award, AwardModel)
 
 
+class TestNewFields:
+    """Tests for newly added fields in TED v2 parser."""
+
+    def test_r209_award_date(self):
+        """Test award_date extraction from DATE_CONCLUSION_CONTRACT."""
+        fixture_file = FIXTURES_DIR / "ted_v2_r2_0_9_2024.xml"
+        result = ted_v2.parse_xml_file(fixture_file)
+        award = result[0].awards[0]
+        assert award.award_date == date(2023, 12, 28)
+
+    def test_r209_lot_number(self):
+        """Test lot_number extraction from AWARD_CONTRACT ITEM attribute."""
+        fixture_file = FIXTURES_DIR / "ted_v2_r2_0_9_2024.xml"
+        result = ted_v2.parse_xml_file(fixture_file)
+        award = result[0].awards[0]
+        assert award.lot_number == "1"
+
+    def test_r209_eu_not_funded(self):
+        """Test eu_funded is False when NO_EU_PROGR_RELATED is present."""
+        fixture_file = FIXTURES_DIR / "ted_v2_r2_0_9_2024.xml"
+        result = ted_v2.parse_xml_file(fixture_file)
+        assert result[0].contract.eu_funded is False
+
+    def test_r209_framework_agreement_false(self):
+        """Test framework_agreement defaults to False when no FRAMEWORK element."""
+        fixture_file = FIXTURES_DIR / "ted_v2_r2_0_9_2024.xml"
+        result = ted_v2.parse_xml_file(fixture_file)
+        assert result[0].contract.framework_agreement is False
+
+    def test_r207_lot_number(self):
+        """Test lot_number extraction from AWARD_OF_CONTRACT ITEM attribute."""
+        fixture_file = FIXTURES_DIR / "ted_v2_r2_0_7_2011.xml"
+        result = ted_v2.parse_xml_file(fixture_file)
+        # Fixture has 3 awards with ITEM="1", "2", "3"
+        assert result[0].awards[0].lot_number == "1"
+        assert result[0].awards[1].lot_number == "2"
+        assert result[0].awards[2].lot_number == "3"
+
+    def test_r207_award_date(self):
+        """Test award_date extraction from CONTRACT_AWARD_DATE (nested elements)."""
+        fixture_file = FIXTURES_DIR / "ted_v2_r2_0_7_2011.xml"
+        result = ted_v2.parse_xml_file(fixture_file)
+        award = result[0].awards[0]
+        assert award.award_date == date(2010, 12, 22)
+
+    def test_r207_eu_not_funded(self):
+        """Test eu_funded is False when RELATES_TO_EU_PROJECT_NO is present."""
+        fixture_file = FIXTURES_DIR / "ted_v2_r2_0_7_2011.xml"
+        result = ted_v2.parse_xml_file(fixture_file)
+        assert result[0].contract.eu_funded is False
+
+
 class TestDataValidation:
     """Tests for data validation and quality."""
 

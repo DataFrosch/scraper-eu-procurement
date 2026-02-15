@@ -4,6 +4,7 @@ All portal parsers must produce these models for the database layer.
 """
 
 from datetime import date
+from decimal import Decimal
 from typing import List, Optional
 from pydantic import BaseModel, Field, field_validator
 
@@ -35,6 +36,13 @@ class AuthorityTypeEntry(BaseModel):
     description: Optional[str] = Field(None, description="Authority type description")
 
 
+class IdentifierEntry(BaseModel):
+    """Organization identifier (e.g. SIRET, VAT, KVK)."""
+
+    scheme: str = Field(..., description="Identifier scheme (e.g. 'FR-SIRET', 'ORG')")
+    identifier: str = Field(..., description="Identifier value")
+
+
 class ContractingBodyModel(BaseModel):
     """Contracting body model."""
 
@@ -48,6 +56,9 @@ class ContractingBodyModel(BaseModel):
         None, description="Authority type"
     )
     main_activity_code: Optional[str] = Field(None, description="Main activity code")
+    identifiers: List[IdentifierEntry] = Field(
+        default_factory=list, description="Organization identifiers"
+    )
 
 
 class CpvCodeEntry(BaseModel):
@@ -85,6 +96,14 @@ class ContractModel(BaseModel):
     accelerated: bool = Field(
         False, description="Accelerated procedure (eForms BT-106)"
     )
+    estimated_value: Optional[Decimal] = Field(
+        None, description="Pre-award estimated value (BT-27)"
+    )
+    estimated_value_currency: Optional[str] = Field(
+        None, description="Currency of estimated value"
+    )
+    framework_agreement: bool = Field(False, description="Framework agreement (BT-765)")
+    eu_funded: bool = Field(False, description="EU funded (BT-60)")
 
 
 class ContractorModel(BaseModel):
@@ -96,6 +115,9 @@ class ContractorModel(BaseModel):
     postal_code: Optional[str] = Field(None, description="Postal code")
     country_code: Optional[str] = Field(None, description="Country code")
     nuts_code: Optional[str] = Field(None, description="NUTS region code")
+    identifiers: List[IdentifierEntry] = Field(
+        default_factory=list, description="Organization identifiers"
+    )
 
 
 class AwardModel(BaseModel):
@@ -109,6 +131,14 @@ class AwardModel(BaseModel):
     awarded_value: Optional[float] = Field(None, description="Awarded value")
     awarded_value_currency: Optional[str] = Field(
         None, description="Awarded value currency"
+    )
+    award_date: Optional[date] = Field(None, description="Date of award decision")
+    lot_number: Optional[str] = Field(None, description="Lot identifier")
+    contract_start_date: Optional[date] = Field(
+        None, description="Performance period start"
+    )
+    contract_end_date: Optional[date] = Field(
+        None, description="Performance period end"
     )
     contractors: List[ContractorModel] = Field(
         default_factory=list, description="List of contractors"

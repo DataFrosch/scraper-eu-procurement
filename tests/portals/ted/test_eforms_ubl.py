@@ -123,6 +123,113 @@ class TestEFormsUBLParser:
         additional_codes = {c.code for c in contract.cpv_codes[1:]}
         assert additional_codes == {"45316110", "45311200", "45311100", "71355200"}
 
+    def test_parse_eforms_tenders_received(self):
+        """Test tenders_received extraction from ReceivedSubmissionsStatistics."""
+        fixture_file = FIXTURES_DIR / "eforms_ubl_2025.xml"
+        result = eforms_ubl.parse_xml_file(fixture_file)
+        award = result[0].awards[0]
+        assert award.tenders_received == 1
+
+    def test_parse_eforms_lot_number(self):
+        """Test lot_number extraction from LotResult/TenderLot."""
+        fixture_file = FIXTURES_DIR / "eforms_ubl_2025.xml"
+        result = eforms_ubl.parse_xml_file(fixture_file)
+        award = result[0].awards[0]
+        assert award.lot_number == "LOT-0000"
+
+    def test_parse_eforms_lot_number_alt(self):
+        """Test lot_number extraction from alt fixture."""
+        fixture_file = FIXTURES_DIR / "eforms_ubl_2025_alt.xml"
+        result = eforms_ubl.parse_xml_file(fixture_file)
+        award = result[0].awards[0]
+        assert award.lot_number == "LOT-0001"
+
+    def test_parse_eforms_lot_scoped_value(self):
+        """Test that awarded value is scoped to the correct lot tender."""
+        fixture_file = FIXTURES_DIR / "eforms_ubl_2025.xml"
+        result = eforms_ubl.parse_xml_file(fixture_file)
+        award = result[0].awards[0]
+        assert award.awarded_value == 23185.00
+        assert award.awarded_value_currency == "EUR"
+
+    def test_parse_eforms_lot_scoped_contractors(self):
+        """Test that contractors are scoped to the correct lot via TenderingParty."""
+        fixture_file = FIXTURES_DIR / "eforms_ubl_2025.xml"
+        result = eforms_ubl.parse_xml_file(fixture_file)
+        award = result[0].awards[0]
+        assert len(award.contractors) == 1
+        assert award.contractors[0].official_name == "Medivar OÜ"
+
+    def test_parse_eforms_lot_scoped_title(self):
+        """Test that award title is scoped from the correct SettledContract."""
+        fixture_file = FIXTURES_DIR / "eforms_ubl_2025.xml"
+        result = eforms_ubl.parse_xml_file(fixture_file)
+        award = result[0].awards[0]
+        assert award.award_title == "Hankeleping"
+        assert award.contract_number == "HM 2024-63"
+
+    def test_parse_eforms_framework_agreement(self):
+        """Test framework_agreement extraction (none = False)."""
+        fixture_file = FIXTURES_DIR / "eforms_ubl_2025.xml"
+        result = eforms_ubl.parse_xml_file(fixture_file)
+        assert result[0].contract.framework_agreement is False
+
+    def test_parse_eforms_eu_funded(self):
+        """Test eu_funded extraction (eu-funds = True)."""
+        fixture_file = FIXTURES_DIR / "eforms_ubl_2025.xml"
+        result = eforms_ubl.parse_xml_file(fixture_file)
+        assert result[0].contract.eu_funded is True
+
+    def test_parse_eforms_eu_not_funded(self):
+        """Test eu_funded extraction (no-eu-funds = False)."""
+        fixture_file = FIXTURES_DIR / "eforms_ubl_2025_alt.xml"
+        result = eforms_ubl.parse_xml_file(fixture_file)
+        assert result[0].contract.eu_funded is False
+
+    def test_parse_eforms_estimated_value(self):
+        """Test estimated_value extraction from ProcurementProjectLot."""
+        fixture_file = FIXTURES_DIR / "eforms_ubl_2025_alt.xml"
+        result = eforms_ubl.parse_xml_file(fixture_file)
+        from decimal import Decimal
+
+        assert result[0].contract.estimated_value == Decimal("1158540")
+        assert result[0].contract.estimated_value_currency == "PLN"
+
+    def test_parse_eforms_contract_period(self):
+        """Test contract_start_date and contract_end_date from PlannedPeriod."""
+        from datetime import date
+
+        fixture_file = FIXTURES_DIR / "eforms_ubl_2025_alt.xml"
+        result = eforms_ubl.parse_xml_file(fixture_file)
+        award = result[0].awards[0]
+        assert award.contract_start_date == date(2024, 11, 27)
+        assert award.contract_end_date == date(2025, 4, 16)
+
+    def test_parse_eforms_contracting_body_identifier(self):
+        """Test organization identifier extraction for contracting body."""
+        fixture_file = FIXTURES_DIR / "eforms_ubl_2025.xml"
+        result = eforms_ubl.parse_xml_file(fixture_file)
+        cb = result[0].contracting_body
+        assert len(cb.identifiers) == 1
+        assert cb.identifiers[0].scheme == "ORG"
+        assert cb.identifiers[0].identifier == "90004585"
+
+    def test_parse_eforms_contractor_identifier(self):
+        """Test organization identifier extraction for contractor."""
+        fixture_file = FIXTURES_DIR / "eforms_ubl_2025.xml"
+        result = eforms_ubl.parse_xml_file(fixture_file)
+        contractor = result[0].awards[0].contractors[0]
+        assert len(contractor.identifiers) == 1
+        assert contractor.identifiers[0].scheme == "ORG"
+        assert contractor.identifiers[0].identifier == "12339040"
+
+    def test_parse_eforms_award_date_skips_placeholder(self):
+        """Test that placeholder award date 2000-01-01 is skipped."""
+        fixture_file = FIXTURES_DIR / "eforms_ubl_2025.xml"
+        result = eforms_ubl.parse_xml_file(fixture_file)
+        award = result[0].awards[0]
+        assert award.award_date is None
+
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v", "--tb=short"])

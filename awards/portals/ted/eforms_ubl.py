@@ -22,6 +22,7 @@ from ...schema import (
     CpvCodeEntry,
     AwardModel,
     ContractorModel,
+    IdentifierEntry,
 )
 from .ted_v2 import _normalize_contract_nature_code, _normalize_procedure_type
 from ...parsers.xml import first_text
@@ -238,6 +239,15 @@ def _extract_contracting_body(
         "url_general": first_text(url_elem),
     }
 
+    # Extract organization identifier (BT-501)
+    identifiers = []
+    company_id_elem = company_elem.xpath(
+        ".//cac:PartyLegalEntity/cbc:CompanyID", namespaces=NAMESPACES
+    )
+    company_id = first_text(company_id_elem)
+    if company_id:
+        identifiers.append(IdentifierEntry(scheme="ORG", identifier=company_id))
+
     cb = ContractingBodyModel(
         official_name=first_text(name_elem) or "",
         address=first_text(address_elem),
@@ -247,6 +257,7 @@ def _extract_contracting_body(
         nuts_code=first_text(nuts_elem),
         authority_type=None,
         main_activity_code=None,
+        identifiers=identifiers,
     )
 
     return cb, contact_fields
@@ -310,6 +321,46 @@ def _extract_contract_info(root: etree._Element) -> Optional[ContractModel]:
         if accel_elems and first_text(accel_elems) == "true":
             accelerated = True
 
+    # BT-27: Estimated value from lot-level ProcurementProject
+    estimated_value = None
+    estimated_value_currency = None
+    est_val_elems = root.xpath(
+        ".//cac:ProcurementProjectLot/cac:ProcurementProject"
+        "/cac:RequestedTenderTotal/cbc:EstimatedOverallContractAmount",
+        namespaces=NAMESPACES,
+    )
+    if est_val_elems and est_val_elems[0].text:
+        try:
+            from decimal import Decimal
+
+            estimated_value = Decimal(est_val_elems[0].text.strip())
+            estimated_value_currency = est_val_elems[0].get("currencyID")
+        except Exception:
+            pass
+
+    # BT-765: Framework agreement
+    framework_elems = root.xpath(
+        ".//cac:ProcurementProjectLot//cbc:ContractingSystemTypeCode"
+        "[@listName='framework-agreement']",
+        namespaces=NAMESPACES,
+    )
+    framework_agreement = False
+    if framework_elems:
+        fw_value = first_text(framework_elems)
+        if fw_value and fw_value != "none":
+            framework_agreement = True
+
+    # BT-60: EU funded
+    eu_funded_elems = root.xpath(
+        ".//cac:ProcurementProjectLot//cbc:FundingProgramCode[@listName='eu-funded']",
+        namespaces=NAMESPACES,
+    )
+    eu_funded = False
+    if eu_funded_elems:
+        eu_value = first_text(eu_funded_elems)
+        if eu_value == "eu-funds":
+            eu_funded = True
+
     return ContractModel(
         title=title,
         short_description=title,
@@ -319,73 +370,29 @@ def _extract_contract_info(root: etree._Element) -> Optional[ContractModel]:
         contract_nature_code=_normalize_contract_nature_code(first_text(nature_elem)),
         procedure_type=procedure_type,
         accelerated=accelerated,
+        estimated_value=estimated_value,
+        estimated_value_currency=estimated_value_currency,
+        framework_agreement=framework_agreement,
+        eu_funded=eu_funded,
     )
 
 
 def _extract_awards(root: etree._Element) -> List[AwardModel]:
-    """Extract award information from eForms UBL."""
+    """Extract award information from eForms UBL using reference-based lookups.
+
+    eForms uses ID cross-references between sibling elements under NoticeResult:
+    - LotResult references a LotTender (tender ID) and SettledContract (contract ID)
+    - LotTender references a TenderingParty (party ID) and contains the awarded value
+    - SettledContract contains title and contract number
+    - TenderingParty references Tenderer org IDs
+    """
     awards = []
 
-    lot_results = root.xpath(".//efac:LotResult", namespaces=NAMESPACES)
-
-    for lot_result in lot_results:
-        # Get tender information
-        tender_amount = root.xpath(
-            ".//efac:LotTender/cac:LegalMonetaryTotal/cbc:PayableAmount",
-            namespaces=NAMESPACES,
-        )
-        awarded_value = None
-        awarded_currency = None
-        if tender_amount and tender_amount[0].text:
-            try:
-                awarded_value = float(tender_amount[0].text)
-            except (ValueError, TypeError) as e:
-                logger.error(
-                    f"Invalid awarded value: {tender_amount[0].text}. Error: {e}"
-                )
-                raise
-            awarded_currency = tender_amount[0].get("currencyID")
-
-        contractors = _extract_contractors(root)
-
-        award_title_elem = root.xpath(
-            ".//efac:SettledContract/cbc:Title", namespaces=NAMESPACES
-        )
-        contract_num_elem = root.xpath(
-            ".//efac:SettledContract/efac:ContractReference/cbc:ID",
-            namespaces=NAMESPACES,
-        )
-
-        awards.append(
-            AwardModel(
-                award_title=first_text(award_title_elem),
-                contract_number=first_text(contract_num_elem),
-                awarded_value=awarded_value,
-                awarded_value_currency=awarded_currency,
-                contractors=contractors,
-            )
-        )
-
-    return awards
-
-
-def _extract_contractors(root: etree._Element) -> List[ContractorModel]:
-    """Extract contractor information from eForms UBL."""
-    contractors = []
-
-    # Find winning tenderer organization IDs
-    winning_org_ids = set()
-    tenderer_parties = root.xpath(".//efac:TenderingParty", namespaces=NAMESPACES)
-    for party in tenderer_parties:
-        tenderer_ids = party.xpath(
-            ".//efac:Tenderer/cbc:ID/text()", namespaces=NAMESPACES
-        )
-        winning_org_ids.update(tenderer_ids)
-
-    # Find contractor organizations by matching IDs
-    orgs = root.xpath(".//efac:Organizations/efac:Organization", namespaces=NAMESPACES)
-
-    for org in orgs:
+    # Build organization lookup: org_id -> Company element
+    org_lookup: dict[str, etree._Element] = {}
+    for org in root.xpath(
+        ".//efac:Organizations/efac:Organization", namespaces=NAMESPACES
+    ):
         company = org.find(".//efac:Company", NAMESPACES)
         if company is not None:
             org_id_elem = company.xpath(
@@ -394,41 +401,201 @@ def _extract_contractors(root: etree._Element) -> List[ContractorModel]:
             org_id = (
                 org_id_elem[0].text if org_id_elem and org_id_elem[0].text else None
             )
+            if org_id:
+                org_lookup[org_id] = company
 
-            if org_id in winning_org_ids:
-                name_elem = company.xpath(
-                    ".//cac:PartyName/cbc:Name", namespaces=NAMESPACES
-                )
-                official_name = first_text(name_elem)
+    # Build lookup dicts from NoticeResult sibling elements
+    lot_tenders: dict[str, etree._Element] = {}
+    for lt in root.xpath(".//efac:NoticeResult/efac:LotTender", namespaces=NAMESPACES):
+        tender_id_elem = lt.xpath("cbc:ID", namespaces=NAMESPACES)
+        if tender_id_elem and tender_id_elem[0].text:
+            lot_tenders[tender_id_elem[0].text] = lt
 
-                if official_name:
-                    address_elem = company.xpath(
-                        ".//cac:PostalAddress/cbc:StreetName", namespaces=NAMESPACES
-                    )
-                    town_elem = company.xpath(
-                        ".//cac:PostalAddress/cbc:CityName", namespaces=NAMESPACES
-                    )
-                    postal_elem = company.xpath(
-                        ".//cac:PostalAddress/cbc:PostalZone", namespaces=NAMESPACES
-                    )
-                    country_elem = company.xpath(
-                        ".//cac:PostalAddress/cac:Country/cbc:IdentificationCode",
-                        namespaces=NAMESPACES,
-                    )
-                    nuts_elem = company.xpath(
-                        ".//cac:PostalAddress/cbc:CountrySubentityCode",
-                        namespaces=NAMESPACES,
-                    )
+    settled_contracts: dict[str, etree._Element] = {}
+    for sc in root.xpath(
+        ".//efac:NoticeResult/efac:SettledContract", namespaces=NAMESPACES
+    ):
+        contract_id_elem = sc.xpath("cbc:ID", namespaces=NAMESPACES)
+        if contract_id_elem and contract_id_elem[0].text:
+            settled_contracts[contract_id_elem[0].text] = sc
 
-                    contractors.append(
-                        ContractorModel(
-                            official_name=official_name,
-                            address=first_text(address_elem),
-                            town=first_text(town_elem),
-                            postal_code=first_text(postal_elem),
-                            country_code=first_text(country_elem),
-                            nuts_code=first_text(nuts_elem),
-                        )
-                    )
+    tendering_parties: dict[str, etree._Element] = {}
+    for tp in root.xpath(
+        ".//efac:NoticeResult/efac:TenderingParty", namespaces=NAMESPACES
+    ):
+        party_id_elem = tp.xpath("cbc:ID", namespaces=NAMESPACES)
+        if party_id_elem and party_id_elem[0].text:
+            tendering_parties[party_id_elem[0].text] = tp
 
-    return contractors
+    # Build lot PlannedPeriod lookup: lot_id -> (start_date, end_date)
+    lot_periods: dict[str, tuple[Optional[date], Optional[date]]] = {}
+    for lot_elem in root.xpath(".//cac:ProcurementProjectLot", namespaces=NAMESPACES):
+        lot_id_elem = lot_elem.xpath("cbc:ID", namespaces=NAMESPACES)
+        if lot_id_elem and lot_id_elem[0].text:
+            lot_id = lot_id_elem[0].text
+            start_elems = lot_elem.xpath(
+                ".//cac:PlannedPeriod/cbc:StartDate", namespaces=NAMESPACES
+            )
+            end_elems = lot_elem.xpath(
+                ".//cac:PlannedPeriod/cbc:EndDate", namespaces=NAMESPACES
+            )
+            start_date = (
+                _parse_date_eforms(start_elems[0].text) if start_elems else None
+            )
+            end_date = _parse_date_eforms(end_elems[0].text) if end_elems else None
+            lot_periods[lot_id] = (start_date, end_date)
+
+    # Extract award_date from TenderResult (document-level)
+    award_date = None
+    award_date_elems = root.xpath(
+        ".//cac:TenderResult/cbc:AwardDate", namespaces=NAMESPACES
+    )
+    if award_date_elems:
+        parsed = _parse_date_eforms(award_date_elems[0].text)
+        # Skip placeholder values like 2000-01-01
+        if parsed and parsed.year >= 2005:
+            award_date = parsed
+
+    # Process each LotResult
+    lot_results = root.xpath(".//efac:LotResult", namespaces=NAMESPACES)
+    for lot_result in lot_results:
+        # Get lot number
+        lot_ref_elems = lot_result.xpath("efac:TenderLot/cbc:ID", namespaces=NAMESPACES)
+        lot_number = first_text(lot_ref_elems)
+
+        # Get tender ID -> look up LotTender -> extract value + TenderingParty ID
+        tender_ref_elems = lot_result.xpath(
+            "efac:LotTender/cbc:ID", namespaces=NAMESPACES
+        )
+        tender_id = first_text(tender_ref_elems)
+
+        awarded_value = None
+        awarded_currency = None
+        party_id = None
+        if tender_id and tender_id in lot_tenders:
+            lot_tender = lot_tenders[tender_id]
+            amount_elems = lot_tender.xpath(
+                "cac:LegalMonetaryTotal/cbc:PayableAmount", namespaces=NAMESPACES
+            )
+            if amount_elems and amount_elems[0].text:
+                try:
+                    awarded_value = float(amount_elems[0].text)
+                except (ValueError, TypeError) as e:
+                    logger.error(
+                        f"Invalid awarded value: {amount_elems[0].text}. Error: {e}"
+                    )
+                    raise
+                awarded_currency = amount_elems[0].get("currencyID")
+
+            # Get TenderingParty ID from LotTender
+            party_ref_elems = lot_tender.xpath(
+                "efac:TenderingParty/cbc:ID", namespaces=NAMESPACES
+            )
+            party_id = first_text(party_ref_elems)
+
+        # Get contract ID -> look up SettledContract -> extract title + contract number
+        contract_ref_elems = lot_result.xpath(
+            "efac:SettledContract/cbc:ID", namespaces=NAMESPACES
+        )
+        contract_id = first_text(contract_ref_elems)
+
+        award_title = None
+        contract_number = None
+        if contract_id and contract_id in settled_contracts:
+            sc = settled_contracts[contract_id]
+            title_elems = sc.xpath("cbc:Title", namespaces=NAMESPACES)
+            award_title = first_text(title_elems)
+            ref_elems = sc.xpath("efac:ContractReference/cbc:ID", namespaces=NAMESPACES)
+            contract_number = first_text(ref_elems)
+
+        # Extract tenders_received from ReceivedSubmissionsStatistics
+        stats = lot_result.xpath(
+            "efac:ReceivedSubmissionsStatistics"
+            "[efbc:StatisticsCode='tenders']"
+            "/efbc:StatisticsNumeric/text()",
+            namespaces=NAMESPACES,
+        )
+        tenders_received = int(stats[0]) if stats else None
+
+        # Follow TenderingParty -> Tenderer org IDs -> resolve to contractors
+        contractors = []
+        if party_id and party_id in tendering_parties:
+            tp = tendering_parties[party_id]
+            tenderer_org_ids = tp.xpath(
+                "efac:Tenderer/cbc:ID/text()", namespaces=NAMESPACES
+            )
+            for org_id in tenderer_org_ids:
+                if org_id in org_lookup:
+                    contractor = _company_to_contractor(org_lookup[org_id])
+                    if contractor:
+                        contractors.append(contractor)
+
+        # Get contract period from lot PlannedPeriod
+        contract_start_date = None
+        contract_end_date = None
+        if lot_number and lot_number in lot_periods:
+            contract_start_date, contract_end_date = lot_periods[lot_number]
+
+        awards.append(
+            AwardModel(
+                award_title=award_title,
+                contract_number=contract_number,
+                awarded_value=awarded_value,
+                awarded_value_currency=awarded_currency,
+                tenders_received=tenders_received,
+                award_date=award_date,
+                lot_number=lot_number,
+                contract_start_date=contract_start_date,
+                contract_end_date=contract_end_date,
+                contractors=contractors,
+            )
+        )
+
+    return awards
+
+
+def _company_to_contractor(
+    company_elem: etree._Element,
+) -> Optional[ContractorModel]:
+    """Convert an eForms Company element to a ContractorModel."""
+    name_elem = company_elem.xpath(".//cac:PartyName/cbc:Name", namespaces=NAMESPACES)
+    official_name = first_text(name_elem)
+    if not official_name:
+        return None
+
+    address_elem = company_elem.xpath(
+        ".//cac:PostalAddress/cbc:StreetName", namespaces=NAMESPACES
+    )
+    town_elem = company_elem.xpath(
+        ".//cac:PostalAddress/cbc:CityName", namespaces=NAMESPACES
+    )
+    postal_elem = company_elem.xpath(
+        ".//cac:PostalAddress/cbc:PostalZone", namespaces=NAMESPACES
+    )
+    country_elem = company_elem.xpath(
+        ".//cac:PostalAddress/cac:Country/cbc:IdentificationCode",
+        namespaces=NAMESPACES,
+    )
+    nuts_elem = company_elem.xpath(
+        ".//cac:PostalAddress/cbc:CountrySubentityCode",
+        namespaces=NAMESPACES,
+    )
+
+    # Extract organization identifier (BT-501)
+    identifiers = []
+    company_id_elem = company_elem.xpath(
+        ".//cac:PartyLegalEntity/cbc:CompanyID", namespaces=NAMESPACES
+    )
+    company_id = first_text(company_id_elem)
+    if company_id:
+        identifiers.append(IdentifierEntry(scheme="ORG", identifier=company_id))
+
+    return ContractorModel(
+        official_name=official_name,
+        address=first_text(address_elem),
+        town=first_text(town_elem),
+        postal_code=first_text(postal_elem),
+        country_code=first_text(country_elem),
+        nuts_code=first_text(nuts_elem),
+        identifiers=identifiers,
+    )

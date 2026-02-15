@@ -19,6 +19,7 @@ from .models import (
     ProcedureType,
     AuthorityType,
     Country,
+    OrganizationIdentifier,
     award_contractors,
     contract_cpv_codes,
 )
@@ -97,6 +98,16 @@ _insert_award = Award.__table__.insert().returning(Award.__table__.c.id)
 _insert_cpv_junc = contract_cpv_codes.insert()
 _insert_award_ct = award_contractors.insert()
 
+# Organization identifier upsert (ignore duplicates)
+_org_id_ins = pg_insert(OrganizationIdentifier.__table__)
+_upsert_org_id_cb = _org_id_ins.on_conflict_do_nothing(
+    constraint="uq_org_id_cb",
+)
+_org_id_ins_ct = pg_insert(OrganizationIdentifier.__table__)
+_upsert_org_id_ct = _org_id_ins_ct.on_conflict_do_nothing(
+    constraint="uq_org_id_ct",
+)
+
 # Doc existence check
 _check_doc = select(Document.__table__.c.doc_id).where(
     Document.__table__.c.doc_id == bindparam("doc_id")
@@ -157,11 +168,14 @@ def save_document_core(session: Session, award_data: AwardDataModel) -> bool:
 
     # Collect all contractor country codes (normalized) for batch upsert
     all_contractor_dicts = []
+    all_contractor_identifiers = []
     for award_item in award_data.awards:
         for c in award_item.contractors:
             cd = c.model_dump()
             cd["country_code"] = _normalize_country_code(cd.get("country_code"))
+            ct_identifiers = cd.pop("identifiers", [])
             all_contractor_dicts.append(cd)
+            all_contractor_identifiers.append(ct_identifiers)
 
     # Upsert all distinct country codes before entities (FK dependency)
     country_codes = {
@@ -180,7 +194,23 @@ def save_document_core(session: Session, award_data: AwardDataModel) -> bool:
         )
 
     # Upsert contracting body
+    cb_identifiers = cb_dict.pop("identifiers", [])
     cb_id = session.execute(_upsert_cb, cb_dict).scalar_one()
+
+    # Insert contracting body identifiers
+    if cb_identifiers:
+        session.execute(
+            _upsert_org_id_cb,
+            [
+                {
+                    "scheme": ident["scheme"],
+                    "identifier": ident["identifier"],
+                    "contracting_body_id": cb_id,
+                    "contractor_id": None,
+                }
+                for ident in cb_identifiers
+            ],
+        )
 
     # Create document with FK to contracting body
     doc_params["contracting_body_id"] = cb_id
@@ -226,15 +256,33 @@ def save_document_core(session: Session, award_data: AwardDataModel) -> bool:
         contractors_data = all_contractor_dicts[
             ct_offset : ct_offset + len(contractors_raw)
         ]
+        ct_identifiers_data = all_contractor_identifiers[
+            ct_offset : ct_offset + len(contractors_raw)
+        ]
         ct_offset += len(contractors_raw)
 
-        contractor_ids = {
-            session.execute(_upsert_ct, c).scalar_one() for c in contractors_data
-        }
-        for contractor_id in contractor_ids:
-            all_award_ct_params.append(
-                {"award_id": award_id, "contractor_id": contractor_id}
-            )
+        seen_contractor_ids = set()
+        for c, ct_idents in zip(contractors_data, ct_identifiers_data):
+            contractor_id = session.execute(_upsert_ct, c).scalar_one()
+            if contractor_id not in seen_contractor_ids:
+                seen_contractor_ids.add(contractor_id)
+                all_award_ct_params.append(
+                    {"award_id": award_id, "contractor_id": contractor_id}
+                )
+            # Insert contractor identifiers
+            if ct_idents:
+                session.execute(
+                    _upsert_org_id_ct,
+                    [
+                        {
+                            "scheme": ident["scheme"],
+                            "identifier": ident["identifier"],
+                            "contracting_body_id": None,
+                            "contractor_id": contractor_id,
+                        }
+                        for ident in ct_idents
+                    ],
+                )
 
     if all_award_ct_params:
         session.execute(_insert_award_ct, all_award_ct_params)
@@ -261,8 +309,10 @@ SELECT
     c.title AS contract_title, c.main_cpv_code,
     c.contract_nature_code, c.procedure_type_code,
     c.nuts_code AS contract_nuts_code,
+    c.framework_agreement, c.eu_funded,
+    c.estimated_value, c.estimated_value_currency,
     a.award_title, a.awarded_value, a.awarded_value_currency,
-    a.tenders_received,
+    a.tenders_received, a.award_date, a.lot_number,
     CASE
         WHEN a.awarded_value IS NULL OR a.awarded_value_currency IS NULL THEN NULL
         WHEN a.awarded_value_currency = 'EUR' THEN a.awarded_value
