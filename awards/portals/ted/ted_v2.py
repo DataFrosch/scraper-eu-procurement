@@ -209,7 +209,7 @@ def _normalize_procedure_type(
     - R2.0.9 canonical codes (e.g. "AWARD_CONTRACT_WITHOUT_CALL") → via _TED_V2_TO_CANONICAL
     - eForms codes (e.g. "neg-wo-call") → pass through as-is
     """
-    if raw_code is None:
+    if raw_code is None or raw_code == "unpublished":
         return None, False
 
     # Old-style numeric/letter code (R2.0.7/R2.0.8)

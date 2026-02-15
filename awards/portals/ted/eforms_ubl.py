@@ -57,6 +57,30 @@ def _parse_date_eforms(text: Optional[str]) -> Optional[date]:
 
 logger = logging.getLogger(__name__)
 
+
+def _parse_optional_int(text: Optional[str], field_name: str) -> Optional[int]:
+    """Parse an optional integer field from eForms XML.
+
+    Accepts plain integers ("3") and whole-number floats ("3.0") since
+    eForms UBL NumericType is decimal-based. Logs a warning for anything else.
+    """
+    if text is None:
+        return None
+    stripped = text.strip()
+    if not stripped:
+        return None
+    if re.match(r"^\d+$", stripped):
+        return int(stripped)
+    if re.match(r"^\d+\.0+$", stripped):
+        return int(stripped.split(".")[0])
+    logger.warning(
+        "Invalid integer value for %s: %r",
+        field_name,
+        text,
+    )
+    return None
+
+
 # eForms namespaces
 NAMESPACES = {
     "can": "urn:oasis:names:specification:ubl:schema:xsd:ContractAwardNotice-2",
@@ -515,7 +539,9 @@ def _extract_awards(root: etree._Element) -> List[AwardModel]:
             "/efbc:StatisticsNumeric/text()",
             namespaces=NAMESPACES,
         )
-        tenders_received = int(stats[0]) if stats else None
+        tenders_received = (
+            _parse_optional_int(stats[0], "tenders_received") if stats else None
+        )
 
         # Follow TenderingParty -> Tenderer org IDs -> resolve to contractors
         contractors = []
