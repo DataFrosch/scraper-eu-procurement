@@ -429,6 +429,47 @@ class TestNewFields:
         result = ted_v2.parse_xml_file(fixture_file)
         assert result[0].contract.eu_funded is False
 
+    def test_r208_nationalid_contracting_body(self):
+        """Test NATIONALID extraction from contracting body in R2.0.8."""
+        fixture_file = FIXTURES_DIR / "ted_v2_r2_0_8_2015.xml"
+        result = ted_v2.parse_xml_file(fixture_file)
+        cb = result[0].contracting_body
+        assert len(cb.identifiers) == 1
+        assert cb.identifiers[0].scheme is None
+        assert cb.identifiers[0].identifier == "233 5000 16000 40"
+
+    def test_r208_nationalid_contractor_absent(self):
+        """Test contractors without NATIONALID have empty identifiers in R2.0.8."""
+        fixture_file = FIXTURES_DIR / "ted_v2_r2_0_8_2015.xml"
+        result = ted_v2.parse_xml_file(fixture_file)
+        contractor = result[0].awards[0].contractors[0]
+        assert contractor.identifiers == []
+
+    def test_r209_nationalid_contracting_body(self):
+        """Test NATIONALID extraction from ADDRESS_CONTRACTING_BODY in R2.0.9."""
+        fixture_file = FIXTURES_DIR / "ted_v2_r2_0_9_nationalid.xml"
+        result = ted_v2.parse_xml_file(fixture_file)
+        cb = result[0].contracting_body
+        assert len(cb.identifiers) == 1
+        assert cb.identifiers[0].scheme is None
+        assert cb.identifiers[0].identifier == "14503401"
+
+    def test_r209_nationalid_contractor(self):
+        """Test NATIONALID extraction from ADDRESS_CONTRACTOR in R2.0.9."""
+        fixture_file = FIXTURES_DIR / "ted_v2_r2_0_9_nationalid.xml"
+        result = ted_v2.parse_xml_file(fixture_file)
+        contractor = result[0].awards[0].contractors[0]
+        assert len(contractor.identifiers) == 1
+        assert contractor.identifiers[0].scheme is None
+        assert contractor.identifiers[0].identifier == "RO 947730"
+
+    def test_r209_no_nationalid(self):
+        """Test documents without NATIONALID have empty identifiers."""
+        fixture_file = FIXTURES_DIR / "ted_v2_r2_0_9_2024.xml"
+        result = ted_v2.parse_xml_file(fixture_file)
+        assert result[0].contracting_body.identifiers == []
+        assert result[0].awards[0].contractors[0].identifiers == []
+
 
 class TestDataValidation:
     """Tests for data validation and quality."""

@@ -22,6 +22,7 @@ from ...schema import (
     ContractingBodyModel,
     ContractModel,
     CpvCodeEntry,
+    IdentifierEntry,
     ProcedureTypeEntry,
     AuthorityTypeEntry,
     AwardModel,
@@ -547,6 +548,16 @@ def _extract_contracting_body_r207(
         "url_buyer": elem_text(url_buyer_elem),
     }
 
+    # Extract NATIONALID from ORGANISATION element
+    identifiers = []
+    nationalid_text = elem_text(
+        ca_elem.find(".//{http://publications.europa.eu/TED_schema/Export}NATIONALID")
+    )
+    if nationalid_text and nationalid_text.strip():
+        identifiers.append(
+            IdentifierEntry(scheme=None, identifier=nationalid_text.strip())
+        )
+
     cb = ContractingBodyModel(
         official_name=official_name,
         address=elem_text(address_elem),
@@ -558,6 +569,7 @@ def _extract_contracting_body_r207(
             elem_attr(authority_type_elem, "CODE")
         ),
         main_activity_code=elem_attr(activity_elem, "CODE"),
+        identifiers=identifiers,
     )
 
     return cb, contact_fields
@@ -590,6 +602,15 @@ def _extract_contracting_body_r209(
         "url_buyer": elem_text(ca_elem.find(f".//{ns}URL_BUYER")),
     }
 
+    # Extract NATIONALID from ADDRESS_CONTRACTING_BODY
+    identifiers = []
+    if addr_cb_elem is not None:
+        nationalid_text = elem_text(addr_cb_elem.find(f".//{ns}NATIONALID"))
+        if nationalid_text and nationalid_text.strip():
+            identifiers.append(
+                IdentifierEntry(scheme=None, identifier=nationalid_text.strip())
+            )
+
     cb = ContractingBodyModel(
         official_name=elem_text(ca_elem.find(f".//{ns}OFFICIALNAME")) or "",
         address=elem_text(ca_elem.find(f".//{ns}ADDRESS")),
@@ -601,6 +622,7 @@ def _extract_contracting_body_r209(
             elem_attr(ca_elem.find(f".//{ns}CA_TYPE"), "VALUE")
         ),
         main_activity_code=elem_attr(ca_elem.find(f".//{ns}CA_ACTIVITY"), "VALUE"),
+        identifiers=identifiers,
     )
 
     return cb, contact_fields
@@ -970,6 +992,18 @@ def _extract_contractors_r207(award_elem: etree._Element) -> List[ContractorMode
             ".//{http://publications.europa.eu/TED_schema/Export}COUNTRY"
         )
 
+        # Extract NATIONALID from ORGANISATION element
+        identifiers = []
+        nationalid_text = elem_text(
+            contact_data_elem.find(
+                ".//{http://publications.europa.eu/TED_schema/Export}NATIONALID"
+            )
+        )
+        if nationalid_text and nationalid_text.strip():
+            identifiers.append(
+                IdentifierEntry(scheme=None, identifier=nationalid_text.strip())
+            )
+
         contractors.append(
             ContractorModel(
                 official_name=official_name,
@@ -978,6 +1012,7 @@ def _extract_contractors_r207(award_elem: etree._Element) -> List[ContractorMode
                 postal_code=elem_text(postal_code_elem),
                 country_code=elem_attr(country_elem, "VALUE"),
                 nuts_code=None,
+                identifiers=identifiers,
             )
         )
 
@@ -992,6 +1027,14 @@ def _extract_contractors_r209(award_elem: etree._Element) -> List[ContractorMode
     for contractor_elem in award_elem.findall(f".//{ns}CONTRACTOR"):
         nuts_elem = contractor_elem.find(".//{*}NUTS")
 
+        # Extract NATIONALID from ADDRESS_CONTRACTOR
+        identifiers = []
+        nationalid_text = elem_text(contractor_elem.find(f".//{ns}NATIONALID"))
+        if nationalid_text and nationalid_text.strip():
+            identifiers.append(
+                IdentifierEntry(scheme=None, identifier=nationalid_text.strip())
+            )
+
         contractors.append(
             ContractorModel(
                 official_name=elem_text(contractor_elem.find(f".//{ns}OFFICIALNAME"))
@@ -1003,6 +1046,7 @@ def _extract_contractors_r209(award_elem: etree._Element) -> List[ContractorMode
                     contractor_elem.find(f".//{ns}COUNTRY"), "VALUE"
                 ),
                 nuts_code=nuts_elem.get("CODE") if nuts_elem is not None else None,
+                identifiers=identifiers,
             )
         )
 
