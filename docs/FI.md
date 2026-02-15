@@ -11,9 +11,11 @@
 
 ## Data Access
 
-- **Method**: REST API (AVP API for open data, ETS API for sending notices)
-- **Format**: JSON, XML
-- **Auth**: AVP API is free, no approval needed; ETS API requires subscription approval
+- **Method**: REST API (Read API + Read API (EForms) + Search)
+- **Base URL**: `https://api.hankintailmoitukset.fi/`
+- **Format**: JSON (search, notice metadata), base64-encoded eForms UBL XML (notice content)
+- **Auth**: `Ocp-Apim-Subscription-Key` header required. Self-service subscriptions are **disabled** on the developer portal — email `yllapito@hankintailmoitukset.fi` (Hansel Oy) to request access.
+- **Swagger**: `https://api.hankintailmoitukset.fi/swagger/swagger/external-read-v1/swagger.json` (publicly accessible)
 - **OCDS**: No
 
 ## Coverage
@@ -26,9 +28,9 @@ Finnish, English (portal and API)
 
 ## Notes
 
-- Well-documented free API with GitHub repo
-- Azure API Management developer portal with Swagger
-- Owner: Ministry of Finance, maintained by Hansel Ltd
+- Owner: Ministry of Finance, maintained by Hansel Oy
+- Azure APIM developer portal at https://hns-hilma-prod-apim.developer.azure-api.net/ (account creation works, but subscription creation is disabled)
+- GitHub repo has API meeting memos and old AVP examples (marked OBSOLETE)
 - Community R package: https://rdrr.io/github/hansel-oy/hilma/
 
 ## Schema Mapping
@@ -50,7 +52,7 @@ For legacy (pre-eForms) notices, Hilma returns JSON based on their proprietary d
 - **Non-eForms notices (legacy)**: Hilma-proprietary JSON. The `objectDescriptions[n].awardContract.awardedContract` (single) or `objectDescriptions[n].awardContract.awardedContracts` (array) pattern is used for award data. A dedicated JSON parser would be needed.
 - **Search index**: JSON responses following Azure Cognitive Search conventions. The index schema can be fetched via `GET /notices` to discover all filterable/searchable fields.
 - **Rate limits**: All read endpoints are rate-limited. The exact limits are not documented; the API docs say "use in moderation."
-- **Auth**: Requires `Ocp-Apim-Subscription-Key` header. Free subscription via the Azure APIM developer portal (no approval needed for AVP/read product).
+- **Auth**: Requires `Ocp-Apim-Subscription-Key` header. Self-service subscriptions disabled — email `yllapito@hankintailmoitukset.fi` for access.
 - **Batch retrieval**: Up to 50 eForms notices per batch request.
 
 ### Notice Type Filtering
@@ -318,4 +320,6 @@ For **legacy JSON notices**, the `procedureType` field uses Hilma-internal codes
 
 4. **Legacy JSON parser**: Only needed if historical (pre-eForms) below-threshold notices are valuable. The JSON field paths documented above are best-effort based on the GitHub README and need verification against actual API responses. Recommend fetching a sample response first.
 
-5. **API key management**: Store the `Ocp-Apim-Subscription-Key` as an environment variable (e.g. `HILMA_API_KEY`). Registration is free and does not require approval for the AVP (read) product.
+5. **API key management**: Store the `Ocp-Apim-Subscription-Key` as an environment variable (e.g. `HILMA_API_KEY`). Self-service subscriptions are disabled — email `yllapito@hankintailmoitukset.fi` for access.
+
+6. **Verified eForms endpoint**: `GET https://api.hankintailmoitukset.fi/avp-eforms/external-read/v1/notice/{noticeId}` — returns JSON with `id` (int), `procedureId` (int), `eForm` (base64-encoded XML), `hilmaStatistics` (object), `dateCreated`, `dateModified`. The `noticeId` parameter is an integer (Hilma-generated).
