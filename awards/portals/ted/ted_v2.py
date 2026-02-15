@@ -150,6 +150,10 @@ _PROCEDURE_TYPE_CODE_MAP: dict[str, ProcedureMapping] = {
     "3": ProcedureMapping("restricted", True),
     "4": ProcedureMapping("neg-w-call", False),
     "6": ProcedureMapping("neg-w-call", True),
+    "9": ProcedureMapping(None, False),  # "Not applicable"
+    "A": ProcedureMapping(
+        None, False
+    ),  # "Direct awards" (MOVE/Reg 1370/2007, not convertible)
     "B": ProcedureMapping("neg-w-call", False),
     "C": ProcedureMapping("comp-dial", False),
     "G": ProcedureMapping("innovation", False),
