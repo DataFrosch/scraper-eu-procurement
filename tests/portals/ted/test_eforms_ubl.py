@@ -11,7 +11,7 @@ These tests validate:
 import pytest
 from pathlib import Path
 
-from awards.portals.ted import eforms_ubl
+from awards.parsers import eforms_ubl
 from awards.schema import (
     AwardDataModel,
     DocumentModel,

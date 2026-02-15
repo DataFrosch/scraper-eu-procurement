@@ -11,7 +11,7 @@ from typing import List, Optional
 from ...db import engine, get_session, save_document_core
 from ...models import Base
 from ...schema import AwardDataModel
-from . import ted_v2, eforms_ubl
+from ...parsers import ted_v2, eforms_ubl
 
 logger = logging.getLogger(__name__)
 

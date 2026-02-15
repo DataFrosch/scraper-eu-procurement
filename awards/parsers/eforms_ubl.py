@@ -14,7 +14,7 @@ from typing import List, Optional
 
 from lxml import etree
 
-from ...schema import (
+from ..schema import (
     AwardDataModel,
     DocumentModel,
     OrganizationModel,
@@ -23,8 +23,8 @@ from ...schema import (
     AwardModel,
     IdentifierEntry,
 )
-from .ted_v2 import _normalize_contract_nature_code, _normalize_procedure_type
-from ...parsers.xml import first_attr, first_text
+from .codes import normalize_contract_nature_code, normalize_procedure_type
+from .xml import first_attr, first_text
 
 
 def _parse_date_eforms(text: Optional[str]) -> Optional[date]:
@@ -338,7 +338,7 @@ def _extract_contract_info(root: etree._Element) -> Optional[ContractModel]:
             cpv_codes.append(CpvCodeEntry(code=additional_code.strip()))
 
     proc_code = first_text(proc_elem)
-    procedure_type, accelerated = _normalize_procedure_type(proc_code, None)
+    procedure_type, accelerated = normalize_procedure_type(proc_code, None)
 
     # BT-106: Procedure Accelerated — separate boolean in eForms
     if not accelerated:
@@ -396,7 +396,7 @@ def _extract_contract_info(root: etree._Element) -> Optional[ContractModel]:
         main_cpv_code=main_code,
         cpv_codes=cpv_codes,
         nuts_code=first_text(nuts_elem),
-        contract_nature_code=_normalize_contract_nature_code(first_text(nature_elem)),
+        contract_nature_code=normalize_contract_nature_code(first_text(nature_elem)),
         procedure_type=procedure_type,
         accelerated=accelerated,
         estimated_value=estimated_value,

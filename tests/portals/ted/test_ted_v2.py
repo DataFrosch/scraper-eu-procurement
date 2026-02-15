@@ -16,7 +16,7 @@ import pytest
 from pathlib import Path
 from datetime import date
 
-from awards.portals.ted import ted_v2
+from awards.parsers import ted_v2
 from awards.schema import (
     AwardDataModel,
     DocumentModel,
