@@ -125,21 +125,33 @@ def get_package_files(
 def download_year(year: int, max_issue: int = 300, data_dir: Path = DATA_DIR):
     """Download TED packages for a year.
 
+    Skips packages already recorded in the packages table (already imported).
+
     Args:
         year: The year to download
         max_issue: Maximum issue number to try (default: 300)
         data_dir: Directory for storing downloaded packages
     """
+    already_imported = get_imported_packages("ted", year)
+    if already_imported:
+        logger.info(f"Year {year}: {len(already_imported)} packages already imported, skipping those")
+
     logger.info(
         f"Downloading TED packages for year {year} (issues 1-{max_issue}, stopping after 10 consecutive 404s)"
     )
 
     total_downloaded = 0
+    skipped = 0
     consecutive_404s = 0
     max_consecutive_404s = 10
 
     for issue in range(1, max_issue + 1):
         package_number = get_package_number(year, issue)
+
+        if package_number in already_imported:
+            skipped += 1
+            continue
+
         success = download_package(package_number, data_dir)
 
         if not success:
@@ -154,7 +166,7 @@ def download_year(year: int, max_issue: int = 300, data_dir: Path = DATA_DIR):
         consecutive_404s = 0
         total_downloaded += 1
 
-    logger.info(f"Year {year}: Downloaded {total_downloaded} packages")
+    logger.info(f"Year {year}: Downloaded {total_downloaded} packages, skipped {skipped} already imported")
 
 
 def get_downloaded_packages(year: int, data_dir: Path = DATA_DIR) -> List[int]:

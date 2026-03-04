@@ -297,6 +297,45 @@ class TestDownloadYear:
         assert requested_issues[0] == 1
 
 
+    def test_skips_already_imported_packages(self, test_db, temp_data_dir):
+        """Test that download_year skips packages already in the packages table."""
+        from datetime import datetime
+        from awards.db import get_session, _upsert_pkg
+
+        # Mark issues 2 and 4 as already imported in DB
+        with get_session() as session:
+            for issue in [2, 4]:
+                session.execute(
+                    _upsert_pkg,
+                    {
+                        "package_number": get_package_number(2024, issue),
+                        "portal": "ted",
+                        "year": 2024,
+                        "issue": issue,
+                        "document_count": 5,
+                        "award_count": 3,
+                        "imported_at": datetime.now(),
+                    },
+                )
+
+        requested_packages = []
+
+        def mock_download(package_num, data_dir):
+            requested_packages.append(package_num)
+            return False  # all 404 to stop quickly
+
+        with patch(
+            "awards.portals.ted.portal.download_package", side_effect=mock_download
+        ):
+            download_year(2024, max_issue=15, data_dir=temp_data_dir)
+
+        # Issues 2 and 4 should NOT appear in requested downloads
+        assert get_package_number(2024, 2) not in requested_packages
+        assert get_package_number(2024, 4) not in requested_packages
+        # Issue 1 should have been attempted
+        assert get_package_number(2024, 1) in requested_packages
+
+
 class TestGetDownloadedPackages:
     """Tests for get_downloaded_packages function."""
 
