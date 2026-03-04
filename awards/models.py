@@ -4,7 +4,7 @@ Organizations (buyers and contractors) are normalized into a shared lookup table
 with exact-match deduplication via a composite unique constraint.
 """
 
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 from typing import List, Optional
 
@@ -13,6 +13,7 @@ from sqlalchemy import (
     Column,
     DDL,
     Date,
+    DateTime,
     ForeignKey,
     Integer,
     Numeric,
@@ -353,4 +354,23 @@ class OrganizationIdentifier(Base):
         ),
         Index("idx_org_id_org", "organization_id"),
         Index("idx_org_id_scheme_id", "scheme", "identifier"),
+    )
+
+
+class Package(Base):
+    """Tracks processed TED packages for idempotent re-runs."""
+
+    __tablename__ = "packages"
+
+    package_number: Mapped[int] = mapped_column(Integer, primary_key=True)
+    portal: Mapped[str] = mapped_column(String, nullable=False)
+    year: Mapped[int] = mapped_column(Integer, nullable=False)
+    issue: Mapped[int] = mapped_column(Integer, nullable=False)
+    document_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    award_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    imported_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+
+    __table_args__ = (
+        Index("idx_packages_year", "year"),
+        Index("idx_packages_portal_year", "portal", "year"),
     )

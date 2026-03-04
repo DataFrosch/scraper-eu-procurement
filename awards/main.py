@@ -72,6 +72,41 @@ def import_cmd(start_year, end_year, portal):
     refresh_materialized_view()
 
 
+@cli.command()
+@click.option(
+    "--portal",
+    type=str,
+    default=None,
+    help="Comma-separated portal names (default: all)",
+)
+def run(portal):
+    """Run full pipeline: download, import, update rates, refresh view.
+
+    Designed for scheduled/cron execution. Processes current year
+    (and previous year in January) automatically.
+    """
+    now = datetime.now()
+    current_year = now.year
+
+    if now.month == 1:
+        years = [current_year - 1, current_year]
+    else:
+        years = [current_year]
+
+    portals = _resolve_portals(portal)
+
+    for y in years:
+        for p in portals:
+            p.download(y, y)
+        for p in portals:
+            p.import_data(y, y)
+
+    update_rates(min(years), current_year)
+    refresh_materialized_view()
+
+    click.echo(f"Pipeline complete for year(s) {', '.join(str(y) for y in years)}")
+
+
 @cli.command(name="update-rates")
 @click.option("--start-year", type=int, default=2011, help="Start year (default: 2011)")
 @click.option("--end-year", type=int, help="End year (default: current year)")

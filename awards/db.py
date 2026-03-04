@@ -19,6 +19,7 @@ from .models import (
     AuthorityType,
     Country,
     OrganizationIdentifier,
+    Package,
     award_contractors,
     contract_cpv_codes,
 )
@@ -102,6 +103,17 @@ _check_doc = select(Document.__table__.c.doc_id).where(
     Document.__table__.c.doc_id == bindparam("doc_id")
 )
 
+# Package upsert (record imported packages)
+_pkg_ins = pg_insert(Package.__table__)
+_upsert_pkg = _pkg_ins.on_conflict_do_update(
+    index_elements=["package_number"],
+    set_={
+        "document_count": _pkg_ins.excluded.document_count,
+        "award_count": _pkg_ins.excluded.award_count,
+        "imported_at": _pkg_ins.excluded.imported_at,
+    },
+)
+
 
 @contextmanager
 def get_session() -> Session:
@@ -115,6 +127,18 @@ def get_session() -> Session:
         raise
     finally:
         session.close()
+
+
+def get_imported_packages(portal: str, year: int) -> set[int]:
+    """Return the set of package_numbers already imported for a portal+year."""
+    with get_session() as session:
+        rows = session.execute(
+            select(Package.__table__.c.package_number).where(
+                Package.__table__.c.portal == portal,
+                Package.__table__.c.year == year,
+            )
+        ).scalars().all()
+    return set(rows)
 
 
 def _normalize_country_code(value: str | None) -> str | None:

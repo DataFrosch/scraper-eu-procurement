@@ -5,10 +5,11 @@ import os
 import requests
 import tarfile
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime
 from pathlib import Path
 from typing import List, Optional
 
-from ...db import engine, get_session, save_document_core
+from ...db import engine, get_imported_packages, get_session, save_document_core, _upsert_pkg
 from ...models import Base
 from ...schema import AwardDataModel
 from ...parsers import ted_v2, eforms_ubl
@@ -192,6 +193,7 @@ def import_package(
     All documents are saved in a single transaction per package.
     Parsing is done in the provided thread pool executor while
     database saving runs sequentially on the calling thread.
+    Records the package in the packages table after successful import.
 
     Args:
         package_number: TED package number (yyyynnnnn format)
@@ -207,6 +209,8 @@ def import_package(
         return 0
 
     xml_files = [f for f in files if f.suffix.lower() == ".xml"]
+    year = package_number // 100000
+    issue = package_number % 100000
 
     own_executor = executor is None
     if own_executor:
@@ -223,6 +227,20 @@ def import_package(
                 for award_data in awards:
                     if save_document_core(session, award_data):
                         count += 1
+
+            # Record package as imported (inside same transaction)
+            session.execute(
+                _upsert_pkg,
+                {
+                    "package_number": package_number,
+                    "portal": "ted",
+                    "year": year,
+                    "issue": issue,
+                    "document_count": len(xml_files),
+                    "award_count": count,
+                    "imported_at": datetime.now(),
+                },
+            )
     finally:
         if own_executor:
             executor.shutdown(wait=False)
@@ -235,18 +253,30 @@ def import_package(
 def import_year(year: int, data_dir: Path = DATA_DIR):
     """Import awards from all downloaded packages for a year.
 
+    Skips packages already recorded in the packages table.
+
     Args:
         year: The year to import
         data_dir: Directory where packages are stored
     """
     Base.metadata.create_all(engine)
 
-    packages = get_downloaded_packages(year, data_dir)
-    if not packages:
+    downloaded = get_downloaded_packages(year, data_dir)
+    if not downloaded:
         logger.warning(f"No downloaded packages found for year {year}")
         return
 
-    logger.info(f"Importing {len(packages)} packages for year {year}")
+    already_imported = get_imported_packages("ted", year)
+    packages = [p for p in downloaded if p not in already_imported]
+
+    if not packages:
+        logger.info(f"Year {year}: All {len(downloaded)} downloaded packages already imported")
+        return
+
+    logger.info(
+        f"Importing {len(packages)} packages for year {year} "
+        f"({len(already_imported)} already imported, skipping)"
+    )
 
     total_imported = 0
     with ThreadPoolExecutor() as executor:

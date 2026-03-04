@@ -345,3 +345,40 @@ class TestImportYear:
             import_year(2024, temp_data_dir)
 
         assert imported_packages == [202400001, 202400002, 202400003]
+
+    def test_skips_already_imported_packages(self, test_db, temp_data_dir):
+        """Test that import_year skips packages already in the packages table."""
+        from datetime import datetime
+        from awards.db import get_session, _upsert_pkg
+
+        # Create package directories with files
+        for issue in [1, 2, 3]:
+            pkg_dir = temp_data_dir / f"20240000{issue}"
+            pkg_dir.mkdir()
+            (pkg_dir / "test.xml").write_text("<test/>")
+
+        # Mark package 2 as already imported in DB
+        with get_session() as session:
+            session.execute(
+                _upsert_pkg,
+                {
+                    "package_number": 202400002,
+                    "portal": "ted",
+                    "year": 2024,
+                    "issue": 2,
+                    "document_count": 5,
+                    "award_count": 3,
+                    "imported_at": datetime.now(),
+                },
+            )
+
+        imported_packages = []
+
+        def mock_import(package_num, data_dir, executor=None):
+            imported_packages.append(package_num)
+            return 0
+
+        with patch("awards.portals.ted.portal.import_package", side_effect=mock_import):
+            import_year(2024, temp_data_dir)
+
+        assert imported_packages == [202400001, 202400003]
